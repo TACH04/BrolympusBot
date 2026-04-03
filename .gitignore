@@ -1,0 +1,14 @@
+.env
+.envrc
+client_secret*
+credentials.json
+/.venv
+token.json
+__pycache__/
+*.py[cod]
+*$py.class
+debug.txt
+.DS_Store
+.icon
+.vscode/
+.idea/
