@@ -2,8 +2,11 @@ import os
 import json
 import datetime
 import time
+import logging
 from dotenv import load_dotenv
 import ollama
+
+logger = logging.getLogger('agent')
 
 from tools import OLLAMA_TOOLS, execute_tool
 
@@ -61,6 +64,7 @@ class CalendarAgent:
         """Reset conversation if inactive for > 10 minutes."""
         now = time.time()
         if now - self.last_activity_time > 600:
+            logger.info("Session inactive for > 10 minutes. Auto-resetting context.")
             self.reset()
             return True
         return False

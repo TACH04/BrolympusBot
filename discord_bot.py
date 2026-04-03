@@ -2,14 +2,38 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 from agent import CalendarAgent
+
+# Configure logging
+log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_file = 'discord_bot.log'
+
+# Set up Rotating File Handler (5 MB max size, 5 backup files)
+file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=5)
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+
+# Set up Console Handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.INFO)
+
+# Get the root logger and add handlers
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger('discord_bot')
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not DISCORD_TOKEN or DISCORD_TOKEN == "your_bot_token_here":
-    print("ERROR: DISCORD_TOKEN is not set in .env")
+    logger.error("DISCORD_TOKEN is not set in .env")
     exit(1)
 
 intents = discord.Intents.default()
@@ -18,18 +42,18 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Shared calendar agent instance
-print("Initializing CalendarAgent...")
+logger.info("Initializing CalendarAgent...")
 agent = CalendarAgent()
-print("CalendarAgent initialized.")
+logger.info("CalendarAgent initialized.")
 
 @bot.event
 async def on_ready():
-    print(f'✅ Logged in as {bot.user.name} ({bot.user.id})')
-    print(f'Connected to {len(bot.guilds)} server(s):')
+    logger.info(f'✅ Logged in as {bot.user.name} ({bot.user.id})')
+    logger.info(f'Connected to {len(bot.guilds)} server(s):')
     for guild in bot.guilds:
-        print(f' - {guild.name} (ID: {guild.id})')
-    print('Bot is ready to receive commands!')
-    print('------')
+        logger.info(f' - {guild.name} (ID: {guild.id})')
+    logger.info('Bot is ready to receive commands!')
+    logger.info('------')
 
 @bot.command(name='help')
 async def help_cmd(ctx):
@@ -45,12 +69,14 @@ Or just mention me or talk directly to me to check and modify your Google Calend
 @bot.command(name='clear')
 async def clear_cmd(ctx):
     """Reset the conversation context."""
+    logger.info(f"User {ctx.author} ran !clear command.")
     agent.reset()
     await ctx.send("✅ Conversation context has been cleared.")
 
 @bot.command(name='session')
 async def session_cmd(ctx):
     """Display current session details."""
+    logger.info(f"User {ctx.author} ran !session command.")
     info = agent.get_session_info()
     idle_str = f"{info['idle_seconds']} seconds"
     if info['idle_seconds'] > 60:
@@ -98,6 +124,10 @@ async def on_message(message):
         return
 
     sender_name = message.author.display_name
+    server_name = message.guild.name if message.guild else "DM"
+    channel_name = message.channel.name if hasattr(message.channel, 'name') else "DM"
+    
+    logger.info(f"Incoming message from {sender_name} in [{server_name} | #{channel_name}]: '{content}'")
     
     response_msg = await message.reply("*(Thinking...)*")
     current_content = ""
@@ -110,6 +140,7 @@ async def on_message(message):
                 if not current_content:
                     await response_msg.edit(content=f"*({event['content']})*")
             elif event['type'] == 'tool_call':
+                logger.info(f"Agent requested tool call: {event['tool']} with args: {event['args']}")
                 if not current_content:
                     await response_msg.edit(content=f"*(Calling tool: {event['tool']}...)*")
             elif event['type'] == 'stream_chunk':
@@ -120,11 +151,16 @@ async def on_message(message):
                     try:
                         await response_msg.edit(content=current_content)
                         last_edit_time = now
-                    except discord.errors.HTTPException:
+                    except discord.errors.HTTPException as e:
+                        logger.warning(f"Ignored HTTPException during message edit update: {e}")
                         pass # Ignore temporary edit failures
             elif event['type'] == 'tool_result':
+                logger.debug(f"Tool {event['tool']} returned: {event['result']}")
                 pass # Silent on result, wait for the agent to talk
+            elif event['type'] == 'message':
+                logger.info(f"Agent generated response (Tokens: {event.get('tokens', 'N/A')}): '{event.get('content', '')}'")
             elif event['type'] == 'error':
+                logger.error(f"Agent generated an error: {event['content']}")
                 await message.reply(f"❌ Error: {event['content']}")
                 break
                 
@@ -133,11 +169,13 @@ async def on_message(message):
             await response_msg.edit(content=current_content)
         elif not current_content:
              # Fallback if no content was generated
+             logger.warning("No content was generated by the agent.")
              await response_msg.edit(content="I'm sorry, I couldn't generate a response.")
             
     except Exception as e:
+        logger.exception(f"An unexpected error occurred during chat step: {e}")
         await message.reply(f"❌ An error occurred: {e}")
 
 if __name__ == '__main__':
-    print("Starting Discord bot...")
+    logger.info("Starting Discord bot...")
     bot.run(DISCORD_TOKEN)

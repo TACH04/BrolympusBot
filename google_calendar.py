@@ -5,7 +5,10 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import datetime
+import logging
 from dotenv import load_dotenv
+
+logger = logging.getLogger('google_calendar')
 
 load_dotenv()
 
@@ -45,7 +48,7 @@ def get_calendar_service():
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
 
-    return build('calendar', 'v3', credentials=creds)
+    return build('calendar', 'v3', credentials=creds, static_discovery=False)
 
 def list_upcoming_events(max_results=10, time_min=None):
     """
@@ -56,7 +59,7 @@ def list_upcoming_events(max_results=10, time_min=None):
     if not time_min:
         time_min = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
         
-    print(f'Getting the upcoming {max_results} events')
+    logger.info(f'Fetching the upcoming {max_results} events from Google Calendar.')
     events_result = service.events().list(calendarId=CALENDAR_ID, timeMin=time_min,
                                         maxResults=max_results, singleEvents=True,
                                         orderBy='startTime').execute()

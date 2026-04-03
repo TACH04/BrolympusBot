@@ -12,3 +12,4 @@ debug.txt
 .icon
 .vscode/
 .idea/
+*.log

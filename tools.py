@@ -1,7 +1,10 @@
 import os
 import json
+import logging
 from google_calendar import list_upcoming_events, create_event, delete_event
 from dotenv import load_dotenv
+
+logger = logging.getLogger('tools')
 
 load_dotenv()
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Los_Angeles")
@@ -78,7 +81,7 @@ def execute_tool(name, arguments):
     """
     Executes the given tool by name with the given arguments.
     """
-    print(f"\n[TOOL CALL] -> Executing {name} with args: {arguments}")
+    logger.info(f"Executing tool: {name} with args: {arguments}")
     try:
         if name == "list_upcoming_events":
             max_results = arguments.get("max_results", 10)
