@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', async () => {
         await fetch('/api/reset', { method: 'POST' });
         chatWindow.innerHTML = '<div class="message system-msg"><p>Memory cleared. How can I help you schedule your day?</p></div>';
-        contextList.innerHTML = '';
+        fetchHistory(); // sync new history (contains system prompt)
         showToast('Memory Reset', 'info');
     });
 
