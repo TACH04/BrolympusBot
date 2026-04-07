@@ -11,6 +11,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load initial history
     fetchHistory();
 
+    function estimateTokens(text) {
+        if (!text) return 0;
+        return Math.floor(text.length / 4);
+    }
+
     chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !isWaiting) sendMessage();
     });
@@ -30,27 +35,47 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/history');
             const history = await res.json();
-            contextList.innerHTML = '';
             
-            history.forEach(msg => {
-                const tokens = msg.tokens || 50;
-                if (msg.role === 'system') {
-                    addContextItem('System', 'Base prompt loaded.', 'system', tokens);
-                } else if (msg.role === 'user') {
-                    addContextItem('User', msg.content, 'user', tokens);
+            const existingCards = contextList.children;
+            
+            history.forEach((msg, index) => {
+                let role = 'system';
+                let title = 'System';
+                let snippet = msg.content || '';
+                let tokens = msg.tokens || 50;
+
+                if (msg.role === 'user') {
+                    role = 'user';
+                    title = 'User';
                 } else if (msg.role === 'assistant') {
+                    role = 'assistant';
+                    title = 'Assistant';
                     if (msg.tool_calls) {
-                        msg.tool_calls.forEach(tc => {
-                            addContextItem(`Tool Call: ${tc.function.name}`, JSON.stringify(tc.function.arguments), 'tool', tokens / msg.tool_calls.length);
-                        });
+                        // Just use the first tool call name for the title in the bar if multiple
+                        const tc = msg.tool_calls[0];
+                        title = `Tool Call: ${tc.function.name}`;
+                        snippet = JSON.stringify(tc.function.arguments);
                     }
-                    if (msg.content) {
-                        addContextItem('Assistant', msg.content.substring(0, 50) + '...', 'assistant', tokens);
-                    }
+                    if (msg.content) snippet = msg.content.substring(0, 50) + '...';
                 } else if (msg.role === 'tool') {
-                    addContextItem(`Tool Result: ${msg.name}`, 'Executed successfully.', 'system', tokens);
+                    role = 'tool';
+                    title = `Tool Result: ${msg.name}`;
+                    snippet = 'Executed successfully.';
+                }
+
+                if (index < existingCards.length) {
+                    // Update existing card
+                    updateContextItem(existingCards[index], title, snippet, role, tokens);
+                } else {
+                    // Append new card
+                    addContextItem(title, snippet, role, tokens);
                 }
             });
+
+            // Remove extra cards if history shrunk (e.g. after reset)
+            while (contextList.children.length > history.length) {
+                contextList.lastChild.remove();
+            }
         } catch (e) {
             console.error('Error fetching history:', e);
         }
@@ -62,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatInput.value = '';
         appendMessage(text, 'user-msg');
+        addContextItem('User', text, 'user', estimateTokens(text));
         // Let the backend sync add context items for new messages to get accurate token counts
         // contextList.innerHTML = ''; fetchHistory(); // we will fetch at the end
 
@@ -95,8 +121,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                             // Handle different event types from backend
                             if (data.type === 'status') {
-                                // show status in context bar or typing indicator
-                                addContextItem('System Status', data.content, 'system', data.tokens || 10);
+                                // Status is handled by typing indicator, skip context bar to avoid grey flickering
+                                continue;
                             } else if (data.type === 'tool_call') {
                                 removeTyping(typingId);
                                 
@@ -106,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 showTyping(); // re-add typing while tool executes
                             } else if (data.type === 'tool_result') {
                                 appendStep(`Tool Result`, data.result);
-                                addContextItem(`Tool Result`, data.result.substring(0, 50) + '...', 'system', data.tokens || 50);
+                                addContextItem(`Tool Result`, data.result.substring(0, 50) + '...', 'tool', data.tokens || 50);
                                 if (data.tool.includes('create') || data.tool.includes('delete')) {
                                     showToast(`Calendar Action Confirmed: ${data.tool}`, 'success');
                                 }
@@ -188,19 +214,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addContextItem(title, snippet, type, tokens = 100) {
-        const MAX_CONTEXT = 8192; // Updated to 8K limit
         const card = document.createElement('div');
-        card.className = `context-card ${type}`;
-        
-        // Ensure at least 0.5% height to be visible
-        const heightPct = Math.max((tokens / MAX_CONTEXT) * 100, 0.5); 
-        card.style.setProperty('--token-height', `${heightPct}%`);
-        
-        card.innerHTML = `<strong>${title}</strong>${snippet.replace(/</g, "&lt;")}`;
-        card.title = `${title}: ~${tokens} tokens`;
-        
+        updateContextItem(card, title, snippet, type, tokens);
         contextList.appendChild(card);
         contextList.scrollTop = 0;
+    }
+
+    function updateContextItem(card, title, snippet, type, tokens = 100) {
+        const MAX_CONTEXT = 8192;
+        const heightPct = Math.max((tokens / MAX_CONTEXT) * 100, 0.5); 
+        
+        // Only update if changed to avoid unnecessary reflows/flicker
+        const newClass = `context-card ${type}`;
+        if (card.className !== newClass) card.className = newClass;
+        
+        const newHeight = `${heightPct}%`;
+        if (card.style.getPropertyValue('--token-height') !== newHeight) {
+            card.style.setProperty('--token-height', newHeight);
+        }
+        
+        const newContent = `<strong>${title}</strong>${snippet.replace(/</g, "&lt;")}`;
+        if (card.innerHTML !== newContent) card.innerHTML = newContent;
+        
+        const newTitle = `${title}: ~${tokens} tokens`;
+        if (card.title !== newTitle) card.title = newTitle;
     }
 
     function showToast(message, type) {
