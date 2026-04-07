@@ -131,6 +131,7 @@ async def on_message(message):
     
     response_msg = await message.reply("*(Thinking...)*")
     current_content = ""
+    created_event_links = []
     last_edit_time = asyncio.get_event_loop().time()
     
     try:
@@ -156,6 +157,13 @@ async def on_message(message):
                         pass # Ignore temporary edit failures
             elif event['type'] == 'tool_result':
                 logger.debug(f"Tool {event['tool']} returned: {event['result']}")
+                if event['tool'] == 'create_event':
+                    import re
+                    # Look for the URL pattern in the create_event result
+                    match = re.search(r'(https://www\.google\.com/calendar/event\?eid=[\w]+)', event['result'])
+                    if match:
+                        created_event_links.append(match.group(1))
+                        logger.info(f"Captured calendar link for embed: {match.group(1)}")
                 pass # Silent on result, wait for the agent to talk
             elif event['type'] == 'message':
                 logger.info(f"Agent generated response (Tokens: {event.get('tokens', 'N/A')}): '{event.get('content', '')}'")
@@ -165,6 +173,14 @@ async def on_message(message):
                 break
                 
         # Final update to ensure we didn't miss the last chunks
+        # Try to embed the link in the text using markdown if "Google Calendar" is mentioned
+        if created_event_links and current_content:
+            link = created_event_links[0] # Grab the first created link
+            if "Google Calendar" in current_content:
+                current_content = current_content.replace("Google Calendar", f"[Google Calendar]({link})")
+            else:
+                current_content += f"\n\n[View Event on Google Calendar]({link})"
+                
         if current_content:
             await response_msg.edit(content=current_content)
         elif not current_content:
