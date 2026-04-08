@@ -98,14 +98,6 @@ class CalendarAgent:
             msg_content = f"[Sender: {sender_name}] {user_input}" if sender_name else user_input
             self.memory.append({"role": "user", "content": msg_content})
 
-            # Check if we need to compress history before continuing
-            if self.memory.needs_compression():
-                total_tokens = self.get_total_tokens()
-                logger.info(f"Token count ({total_tokens}) exceeds threshold. Compressing memory...")
-                yield {"type": "status", "content": "Compressing conversation memory...", "tokens": 0}
-                await self.memory.compress_history()
-                yield {"type": "compressed"}
-
             yield {"type": "status", "content": "Assistant is thinking...", "tokens": 0}
             
         try:
@@ -226,6 +218,14 @@ class CalendarAgent:
                     
             if turn_count >= MAX_TURNS:
                 yield {"type": "error", "content": f"Reached maximum number of tool turns ({MAX_TURNS})."}
+
+            # Check if we need to compress history at the end of the turn
+            if self.memory.needs_compression():
+                total_tokens = self.get_total_tokens()
+                logger.info(f"Token count ({total_tokens}) exceeds threshold at end of turn. Compressing memory...")
+                yield {"type": "status", "content": "Compressing conversation memory...", "tokens": 0}
+                await self.memory.compress_history()
+                yield {"type": "compressed"}
                 
         except Exception as e:
             yield {"type": "error", "content": str(e)}
