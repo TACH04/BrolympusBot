@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
-from agents.agent import CalendarAgent
+from agents.agent import GeneralAgent
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -36,9 +36,9 @@ logger = logging.getLogger('web.app')
 werkzeug_log = logging.getLogger('werkzeug')
 werkzeug_log.setLevel(logging.ERROR)
 
-logger.info("Initializing CalendarAgent in app.py...")
-agent = CalendarAgent()
-logger.info("CalendarAgent initialized.")
+logger.info("Initializing GeneralAgent in app.py...")
+agent = GeneralAgent()
+logger.info("GeneralAgent initialized.")
 
 @app.route("/")
 def index():

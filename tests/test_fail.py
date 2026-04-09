@@ -1,12 +1,12 @@
 import asyncio
 import os
 import json
-from agent import CalendarAgent
+from agents.agent import GeneralAgent
 from dotenv import load_dotenv
 
 async def reproduce():
     load_dotenv()
-    agent = CalendarAgent()
+    agent = GeneralAgent()
     print(f"Reproducing with model: {agent.model}")
     
     prompt = "initiate the command directed by a randomly selected command"

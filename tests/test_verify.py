@@ -1,8 +1,8 @@
 import asyncio
-from agent import CalendarAgent
+from agents.agent import GeneralAgent
 
 async def test_agent():
-    agent = CalendarAgent()
+    agent = GeneralAgent()
     print("Testing verify_date tool integration...")
     prompt = "Can you schedule a team meeting for next Friday at 2 PM for 1 hour?"
     print(f"User> {prompt}")

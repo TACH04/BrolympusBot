@@ -1,7 +1,7 @@
 """
 memory_manager.py
 
-Handles within-session context management for the CalendarAgent:
+Handles within-session context management for the GeneralAgent:
   - Token estimation
   - Tool result pruning (prevents large JSON payloads from bloating context)
   - Recursive summarization (compresses old turns when nearing the token limit)
@@ -33,7 +33,7 @@ def estimate_tokens(text) -> int:
 
 class MemoryManager:
     """
-    Manages the active message list for a single CalendarAgent session.
+    Manages the active message list for a single GeneralAgent session.
 
     Responsibilities:
       - Maintain the ordered list of messages.

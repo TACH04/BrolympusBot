@@ -5,7 +5,7 @@ import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
-from agents.agent import CalendarAgent
+from agents.agent import GeneralAgent
 
 # Configure logging
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -41,10 +41,41 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# Shared calendar agent instance
-logger.info("Initializing CalendarAgent...")
-agent = CalendarAgent()
-logger.info("CalendarAgent initialized.")
+# Session Management
+class SessionManager:
+    def __init__(self):
+        self.sessions = {}
+        self.cleanup_task = None
+
+    def get_session(self, channel_id: int):
+        """Returns the (CalendarAgent, asyncio.Lock) for a given channel."""
+        if channel_id not in self.sessions:
+            logger.info(f"Creating new session for channel {channel_id}")
+            self.sessions[channel_id] = {
+                'agent': GeneralAgent(),
+                'lock': asyncio.Lock(),
+                'last_access': asyncio.get_event_loop().time()
+            }
+        
+        session = self.sessions[channel_id]
+        session['last_access'] = asyncio.get_event_loop().time()
+        return session['agent'], session['lock']
+
+    async def cleanup_loop(self):
+        """Periodically removes sessions that have been inactive for > 1 hour."""
+        while True:
+            await asyncio.sleep(600) # Check every 10 minutes
+            now = asyncio.get_event_loop().time()
+            to_delete = []
+            for cid, session in self.sessions.items():
+                if now - session['last_access'] > 3600: # 1 hour
+                    to_delete.append(cid)
+            
+            for cid in to_delete:
+                logger.info(f"Cleaning up inactive session for channel {cid}")
+                del self.sessions[cid]
+
+session_manager = SessionManager()
 
 @bot.event
 async def on_ready():
@@ -52,6 +83,11 @@ async def on_ready():
     logger.info(f'Connected to {len(bot.guilds)} server(s):')
     for guild in bot.guilds:
         logger.info(f' - {guild.name} (ID: {guild.id})')
+    
+    # Start cleanup task
+    if session_manager.cleanup_task is None:
+        session_manager.cleanup_task = asyncio.create_task(session_manager.cleanup_loop())
+        
     logger.info('Bot is ready to receive commands!')
     logger.info('------')
 
@@ -69,20 +105,23 @@ Just mention me or talk directly to me to check and modify the squad's Google Ca
 @bot.command(name='clear')
 async def clear_cmd(ctx):
     """Reset the conversation context."""
-    logger.info(f"User {ctx.author} ran !clear command.")
-    agent.reset()
-    await ctx.send("✅ Conversation context has been cleared.")
+    logger.info(f"User {ctx.author} ran !clear command in channel {ctx.channel.id}.")
+    agent, lock = session_manager.get_session(ctx.channel.id)
+    async with lock:
+        agent.reset()
+        await ctx.send("✅ Conversation context for this channel has been cleared.")
 
 @bot.command(name='session')
 async def session_cmd(ctx):
     """Display current session details."""
-    logger.info(f"User {ctx.author} ran !session command.")
+    logger.info(f"User {ctx.author} ran !session command in channel {ctx.channel.id}.")
+    agent, _ = session_manager.get_session(ctx.channel.id)
     info = agent.get_session_info()
     idle_str = f"{info['idle_seconds']} seconds"
     if info['idle_seconds'] > 60:
         idle_str = f"{info['idle_seconds'] // 60} min {info['idle_seconds'] % 60} sec"
     
-    msg = (f"**Session Info:**\n"
+    msg = (f"**Session Info (Channel Context):**\n"
            f"- Model: `{info['model']}`\n"
            f"- Message Count: `{info['message_count']}`\n"
            f"- Estimated Tokens: `{info.get('estimated_tokens', '?')}` / 8000\n"
@@ -131,90 +170,111 @@ async def on_message(message):
     
     logger.info(f"Incoming message from {sender_name} in [{server_name} | #{channel_name}]: '{content}'")
     
-    response_msg = await message.reply("*(Thinking...)*")
-    current_content = ""
-    created_event_links = []
-    last_edit_time = asyncio.get_event_loop().time()
-    tools_used = []
+    agent, lock = session_manager.get_session(message.channel.id)
     
-    try:
-        async for event in agent.chat_step(content, sender_name=sender_name):
-            if event['type'] == 'status':
-                # Always show status until the actual streaming response starts
-                if not current_content:
-                    await response_msg.edit(content=f"*({event['content']})*")
-            elif event['type'] == 'tool_call':
-                logger.info(f"Agent requested tool call: {event['tool']} with args: {event['args']}")
-                tools_used.append(event['tool'])
-                if not current_content:
-                    await response_msg.edit(content=f"*(Calling tool: {event['tool']}...)*")
-            elif event['type'] == 'stream_chunk':
-                current_content += event['content']
-                now = asyncio.get_event_loop().time()
-                # Edit every 1 second to avoid rate limits
-                if now - last_edit_time > 1.0:
-                    try:
-                        await response_msg.edit(content=current_content)
-                        last_edit_time = now
-                    except discord.errors.HTTPException as e:
-                        logger.warning(f"Ignored HTTPException during message edit update: {e}")
-                        pass # Ignore temporary edit failures
-            elif event['type'] == 'tool_result':
-                logger.debug(f"Tool {event['tool']} returned: {event['result']}")
-                if event['tool'] == 'create_event':
-                    import re
-                    # Look for the URL pattern in the create_event result
-                    match = re.search(r'(https://www\.google\.com/calendar/event\?eid=[\w]+)', event['result'])
-                    if match:
-                        created_event_links.append(match.group(1))
-                        logger.info(f"Captured calendar link for embed: {match.group(1)}")
-                pass # Silent on result, wait for the agent to talk
-            elif event['type'] == 'message':
-                logger.info(f"Agent generated response (Tokens: {event.get('tokens', 'N/A')}): '{event.get('content', '')}'")
-            elif event['type'] == 'error':
-                logger.error(f"Agent generated an error: {event['content']}")
-                await message.reply(f"❌ Error: {event['content']}")
-                break
-                
-        # Final update to ensure we didn't miss the last chunks
-        # Try to embed the link in the text using markdown if "Google Calendar" is mentioned
-        if created_event_links and current_content:
-            link = created_event_links[0] # Grab the first created link
-            if "Google Calendar" in current_content:
-                current_content = current_content.replace("Google Calendar", f"[Google Calendar]({link})")
-            else:
-                current_content += f"\n\n[View Event on Google Calendar]({link})"
-                
-        if current_content:
-            # Append tools used if any
-            if tools_used:
-                from collections import Counter
-                # Count tools while preserving order of first appearance
-                counts = Counter(tools_used)
-                unique_tools = []
-                for t in tools_used:
-                    if t not in unique_tools:
-                        unique_tools.append(t)
-                
-                tool_parts = []
-                for t in unique_tools:
-                    count = counts[t]
-                    if count > 1:
-                        tool_parts.append(f"`{t}` (x{count})")
-                    else:
-                        tool_parts.append(f"`{t}`")
-                
-                current_content += f"\n\n*Tools used: {', '.join(tool_parts)}*"
+    # Use a lock to process channel messages sequentially
+    if lock.locked():
+        wait_msg = await message.reply("*(Waiting for my turn to process your request...)*")
+    else:
+        wait_msg = None
 
-            await response_msg.edit(content=current_content)
-        elif not current_content:
-             # Fallback if no content was generated
-             logger.warning("No content was generated by the agent.")
-             await response_msg.edit(content="I'm sorry, I couldn't generate a response.")
-            
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred during chat step: {e}")
-        await message.reply(f"❌ An error occurred: {e}")
+    async with lock:
+        if wait_msg:
+            try:
+                await wait_msg.delete()
+            except:
+                pass
+                
+        response_msg = await message.reply("*(Thinking...)*")
+        current_content = ""
+        created_event_links = []
+        last_edit_time = asyncio.get_event_loop().time()
+        tools_used = []
+        
+        try:
+            async for event in agent.chat_step(content, sender_name=sender_name):
+                if event['type'] == 'status':
+                    # Always show status until the actual streaming response starts
+                    if not current_content:
+                        try:
+                            await response_msg.edit(content=f"*({event['content']})*")
+                        except Exception as e:
+                            logger.warning(f"Failed to edit status: {e}")
+                elif event['type'] == 'tool_call':
+                    logger.info(f"Agent requested tool call: {event['tool']} with args: {event['args']}")
+                    tools_used.append(event['tool'])
+                    if not current_content:
+                        try:
+                            await response_msg.edit(content=f"*(Calling tool: {event['tool']}...)*")
+                        except Exception as e:
+                            logger.warning(f"Failed to edit tool call status: {e}")
+                elif event['type'] == 'stream_chunk':
+                    current_content += event['content']
+                    now = asyncio.get_event_loop().time()
+                    # Edit every 1 second to avoid rate limits
+                    if now - last_edit_time > 1.2: # increased slightly for safety
+                        try:
+                            await response_msg.edit(content=current_content)
+                            last_edit_time = now
+                        except discord.errors.HTTPException as e:
+                            logger.warning(f"Ignored HTTPException during message edit update: {e}")
+                            pass # Ignore temporary edit failures
+                elif event['type'] == 'tool_result':
+                    logger.debug(f"Tool {event['tool']} returned: {event['result']}")
+                    if event['tool'] == 'create_event':
+                        import re
+                        # Look for the URL pattern in the create_event result
+                        match = re.search(r'(https://www\.google\.com/calendar/event\?eid=[\w]+)', event['result'])
+                        if match:
+                            created_event_links.append(match.group(1))
+                            logger.info(f"Captured calendar link for embed: {match.group(1)}")
+                    pass # Silent on result, wait for the agent to talk
+                elif event['type'] == 'message':
+                    logger.info(f"Agent generated response (Tokens: {event.get('tokens', 'N/A')}): '{event.get('content', '')}'")
+                elif event['type'] == 'error':
+                    logger.error(f"Agent generated an error: {event['content']}")
+                    await message.reply(f"❌ Error: {event['content']}")
+                    break
+                    
+            # Final update to ensure we didn't miss the last chunks
+            # Try to embed the link in the text using markdown if "Google Calendar" is mentioned
+            if created_event_links and current_content:
+                link = created_event_links[0] # Grab the first created link
+                if "Google Calendar" in current_content:
+                    current_content = current_content.replace("Google Calendar", f"[Google Calendar]({link})")
+                else:
+                    current_content += f"\n\n[View Event on Google Calendar]({link})"
+                    
+            if current_content:
+                # Append tools used if any
+                if tools_used:
+                    from collections import Counter
+                    # Count tools while preserving order of first appearance
+                    counts = Counter(tools_used)
+                    unique_tools = []
+                    for t in tools_used:
+                        if t not in unique_tools:
+                            unique_tools.append(t)
+                    
+                    tool_parts = []
+                    for t in unique_tools:
+                        count = counts[t]
+                        if count > 1:
+                            tool_parts.append(f"`{t}` (x{count})")
+                        else:
+                            tool_parts.append(f"`{t}`")
+                    
+                    current_content += f"\n\n*Tools used: {', '.join(tool_parts)}*"
+    
+                await response_msg.edit(content=current_content)
+            elif not current_content:
+                 # Fallback if no content was generated
+                 logger.warning("No content was generated by the agent.")
+                 await response_msg.edit(content="I'm sorry, I couldn't generate a response.")
+                
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred during chat step: {e}")
+            await message.reply(f"❌ An error occurred: {e}")
 
 if __name__ == '__main__':
     logger.info("Starting Discord bot...")

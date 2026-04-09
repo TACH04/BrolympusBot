@@ -47,7 +47,7 @@ Timezone: {SERVER_TIMEZONE}
 
 
 
-class CalendarAgent:
+class GeneralAgent:
     def __init__(self):
         self.model = MODEL
         self.last_activity_time = time.time()
@@ -292,7 +292,7 @@ async def cli_chat_loop():
     print(f"Starting Brolympus Bot CLI Harness (Model: {MODEL})")
     print("Type 'quit' or 'exit' to stop.\n")
     
-    agent = CalendarAgent()
+    agent = GeneralAgent()
     
     while True:
         try:
