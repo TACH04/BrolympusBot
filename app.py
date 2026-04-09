@@ -94,6 +94,13 @@ def history():
     logger.info("History requested.")
     return jsonify(agent.get_history())
 
+@app.route("/api/config", methods=["GET"])
+def get_config():
+    return jsonify({
+        "OLLAMA_NUM_CTX": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+        "MODEL": os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")
+    })
+
 @app.route("/api/reset", methods=["POST"])
 def reset():
     logger.info("Context reset requested via web API.")

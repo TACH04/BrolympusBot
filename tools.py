@@ -29,8 +29,7 @@ registry = ToolRegistry()
             }
         },
         "required": []
-    },
-    required_skill="Calendar Management"
+    }
 )
 def list_upcoming_events_tool(max_results=10):
     return list_upcoming_events(max_results)
@@ -59,8 +58,7 @@ def list_upcoming_events_tool(max_results=10):
             }
         },
         "required": ["summary", "start_time", "end_time"]
-    },
-    required_skill="Calendar Management"
+    }
 )
 def create_event_tool(summary, start_time, end_time, description=""):
     return create_event(summary, description, start_time, end_time, timezone=SERVER_TIMEZONE)
@@ -77,8 +75,7 @@ def create_event_tool(summary, start_time, end_time, description=""):
             }
         },
         "required": ["event_id"]
-    },
-    required_skill="Calendar Management"
+    }
 )
 def delete_event_tool(event_id):
     return delete_event(event_id)
@@ -95,8 +92,7 @@ def delete_event_tool(event_id):
             }
         },
         "required": ["date_string"]
-    },
-    required_skill="Calendar Management"
+    }
 )
 def verify_date_tool(date_string):
     return verify_date(date_string)
@@ -123,21 +119,20 @@ def search_web_tool(query, max_results=5):
     return search_web(query, max_results)
 
 @registry.register(
-    name="deep_research",
-    description="Spawn a sub-agent to perform deep, multi-step research on a complex topic. Use for complex questions, synthesis tasks, or when asked to 'research' something thoroughly.",
+    name="investigate_topic",
+    description="Gather detailed information on a topic by performing multiple search and reading steps. Use this for complex questions or when you need more than a simple search result.",
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The complex query or topic to research."
+                "description": "The topic or question to investigate in depth."
             }
         },
         "required": ["query"]
-    },
-    required_skill="Deep Research"
+    }
 )
-def deep_research_tool(query):
+def investigate_topic_tool(query):
     return {"SPAWN_SUBAGENT": True, "query": query}
 
 @registry.register(
@@ -159,22 +154,6 @@ def scrape_url_tool(url):
 
 # --- Compatibility Layer ---
 
-@registry.register(
-    name="get_skill",
-    description="Load the full instructions for a specific skill by name. Call this before using a skill's tools to get detailed guidance on how to use them correctly.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "skill_name": {
-                "type": "string",
-                "description": "The exact name of the skill to load (e.g. 'Calendar Management', 'Deep Research')."
-            }
-        },
-        "required": ["skill_name"]
-    }
-)
-def get_skill_tool(skill_name):
-    return get_skill_content(skill_name)
 
 # Export OLLAMA_TOOLS for agent.py
 OLLAMA_TOOLS = registry.get_ollama_tools()

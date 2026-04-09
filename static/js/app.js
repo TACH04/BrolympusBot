@@ -13,9 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopBtn = document.getElementById('stop-btn');
     let currentSubAssistantMsgContainer = null;
     
-    const subStatusText = document.getElementById('sub-status-text');
+    let chatMessagesRendered = 0;
     
-    // Switching Elements
+    // Switch Elements
     const switchToMainBtn = document.getElementById('switch-to-main');
     const switchToSubBtn = document.getElementById('switch-to-sub');
     const paneMain = document.getElementById('pane-main');
@@ -24,6 +24,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const subChatWindow = document.getElementById('sub-chat-window');
     const subContextList = document.getElementById('sub-context-list');
     const subTokenCount = document.getElementById('sub-token-count');
+    const subStatusText = document.getElementById('sub-status-text');
+    
+    let appConfig = {
+        OLLAMA_NUM_CTX: 8192 // default fallback
+    };
+
+    async function fetchConfig() {
+        try {
+            const res = await fetch('/api/config');
+            const config = await res.json();
+            appConfig = config;
+            console.log("App configuration loaded:", appConfig);
+            // Refresh history/display after config is loaded to ensure scaling is correct
+            fetchHistory();
+        } catch (e) {
+            console.error("Failed to fetch app config:", e);
+        }
+    }
     
     // Tab Switching Logic
     function switchTab(tabId) {
@@ -42,8 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isWaiting = false;
     let abortController = null;
 
-    // Load initial history
-    fetchHistory();
+    // Load initial config and history
+    fetchConfig();
 
     function estimateTokens(text) {
         if (!text) return 0;
@@ -68,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', async () => {
         await fetch('/api/reset', { method: 'POST' });
         chatWindow.innerHTML = '<div class="message system-msg"><p>Memory cleared. How can I help you schedule your day?</p></div>';
+        chatMessagesRendered = 0; // Reset tracking
         fetchHistory(); // sync new history (contains system prompt)
         showToast('Memory Reset', 'info');
     });
@@ -95,6 +114,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const history = await res.json();
             
             const existingCards = contextList.children;
+
+            // --- Chat Window Sync ---
+            // If we have non-system history and haven't rendered yet, clear the welcome message
+            if (chatMessagesRendered === 0 && history.length > 1) {
+                const hasRealContent = history.some(m => m.role !== 'system');
+                if (hasRealContent) {
+                    chatWindow.innerHTML = '';
+                }
+            }
             
             history.forEach((msg, index) => {
                 let role = 'system';
@@ -124,6 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     snippet = 'Executed successfully.';
                 }
 
+                // --- Sidebar Update ---
                 if (index < existingCards.length) {
                     // Update existing card
                     updateContextItem(existingCards[index], title, snippet, role, tokens, fullContent);
@@ -131,9 +160,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Append new card
                     addContextItem(title, snippet, role, tokens, fullContent);
                 }
-            });
 
-            // updateTotalTokenDisplay will be called by updateContextItem/addContextItem
+                // --- Chat Window Update ---
+                if (index >= chatMessagesRendered) {
+                    if (msg.role === 'user') {
+                        appendMessage(msg.content, 'user-msg');
+                    } else if (msg.role === 'assistant') {
+                        if (msg.content) {
+                            const p = document.createElement('p');
+                            p.innerHTML = msg.content.replace(/\n/g, '<br>');
+                            const div = appendMessage('', 'agent-msg');
+                            div.appendChild(p);
+                        }
+                        if (msg.tool_calls) {
+                            msg.tool_calls.forEach(tc => {
+                                appendStep(`Tool Call: ${tc.function.name}`, JSON.stringify(tc.function.arguments, null, 2));
+                            });
+                        }
+                    } else if (msg.role === 'tool') {
+                        appendStep(`Tool Result: ${msg.name}`, msg.content);
+                    } else if (msg.role === 'system' && msg.is_memory) {
+                        appendMessage(msg.content, 'system-msg');
+                    }
+                    chatMessagesRendered++;
+                }
+            });
 
             // Remove extra cards if history shrunk (e.g. after reset)
             while (contextList.children.length > history.length) {
@@ -145,12 +196,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
 
         chatInput.value = '';
         appendMessage(text, 'user-msg');
+        chatMessagesRendered++;
         addContextItem('User', text, 'user', estimateTokens(text));
         
         isWaiting = true;
@@ -175,17 +228,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let done = false;
             let currentAssistantMsgContainer = null;
+            let lineBuffer = "";
 
             while (!done) {
                 const { value, done: readerDone } = await reader.read();
                 done = readerDone;
                 if (value) {
                     const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
+                    lineBuffer += chunk;
+                    
+                    const lines = lineBuffer.split('\n');
+                    // Keep the last partial line in the buffer
+                    lineBuffer = lines.pop();
                     
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = JSON.parse(line.substring(6));
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+                        
+                        try {
+                            const data = JSON.parse(trimmedLine.substring(6));
                             
                             // Handle different event types from backend
                             if (data.type === 'status') {
@@ -193,19 +254,25 @@ document.addEventListener('DOMContentLoaded', () => {
                                     showToast('Memory Compressing...', 'info');
                                 }
                                 updateTyping(data.content);
-                                continue;
+                            } else if (data.type === 'debug_event' || data.type === 'debug_stream') {
+                                // Log trace events to console for now, prevents them being ignored or causing issues
+                                console.log(`[Trace: ${data.category}]`, data.content);
+                                if (data.type === 'debug_stream') {
+                                    // if it's subagent briefing, show it as subagent thought
+                                    if (data.category === 'briefing') {
+                                        showSubTyping('Extracting Context...');
+                                    }
+                                }
                             } else if (data.type === 'compressed') {
                                 await fetchHistory();
-                                continue;
                             } else if (data.type === 'tool_call') {
-                                updateTyping(null); // Temporarily hide typing for tool call info
-                                
+                                updateTyping(null);
                                 appendStep(`Tool Call: ${data.tool}`, JSON.stringify(data.args, null, 2));
+                                chatMessagesRendered++;
                                 addContextItem(`Tool Call: ${data.tool}`, JSON.stringify(data.args), 'assistant', data.tokens || 50, JSON.stringify(data.args, null, 2));
-                                
-                                showTyping(); // re-add typing while tool executes
+                                showTyping();
                             } else if (data.type === 'subagent_start') {
-                                subChatWindow.innerHTML = '<div class="message system-msg"><p>I am the Research Sub-Agent. Starting Deep Research...</p></div>';
+                                subChatWindow.innerHTML = '<div class="message system-msg"><p>I am the Research Sub-Agent. Starting Investigation...</p></div>';
                                 subContextList.innerHTML = '';
                                 subTokenCount.textContent = '0 Tokens';
                                 subBadge.classList.remove('hidden');
@@ -215,9 +282,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 updateSubTyping(data.content);
                             } else if (data.type === 'subagent_thought') {
                                 if (subStatusText) subStatusText.textContent = '● Investigating...';
-                                showSubTyping('Thinking...'); // Stable label
+                                showSubTyping('Thinking...');
                             } else if (data.type === 'subagent_thought_stream') {
-                                // Fallback for any old thought_stream events
                                 showSubTyping(data.content); 
                             } else if (data.type === 'subagent_stream_chunk') {
                                 if (subStatusText) subStatusText.textContent = '● Writing Report...';
@@ -226,12 +292,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                                 const p = currentSubAssistantMsgContainer.querySelector('p') || document.createElement('p');
                                 if (!p.parentElement) currentSubAssistantMsgContainer.appendChild(p);
-                                // Append chunk text
                                 p.textContent += data.content;
                                 subChatWindow.scrollTop = subChatWindow.scrollHeight;
                             } else if (data.type === 'subagent_tool_call') {
                                 if (subStatusText) subStatusText.textContent = `● Using ${data.tool}...`;
-                                currentSubAssistantMsgContainer = null; // Next message will be a new bubble
+                                currentSubAssistantMsgContainer = null;
                                 updateSubTyping(null);
                                 appendSubStep(`Sub-Agent 🔎: ${data.tool}`, JSON.stringify(data.args, null, 2));
                                 addSubContextItem(`Tool Call: ${data.tool}`, JSON.stringify(data.args), 'assistant', data.tokens || 50, JSON.stringify(data.args, null, 2));
@@ -248,26 +313,28 @@ document.addEventListener('DOMContentLoaded', () => {
                                 switchTab('main');
                             } else if (data.type === 'tool_result') {
                                 appendStep(`Tool Result`, data.result);
+                                chatMessagesRendered++;
                                 addContextItem(`Tool Result`, data.result.substring(0, 50) + '...', 'tool', data.tokens || 50, data.result);
                                 if (data.tool.includes('create') || data.tool.includes('delete')) {
                                     showToast(`Calendar Action Confirmed: ${data.tool}`, 'success');
                                 }
-
                             } else if (data.type === 'message') {
                                 removeTyping();
                                 if (!currentAssistantMsgContainer) {
                                     currentAssistantMsgContainer = appendMessage('', 'agent-msg');
+                                    chatMessagesRendered++;
                                 }
                                 const p = document.createElement('p');
-                                // Simple markdown formatting
                                 p.innerHTML = data.content.replace(/\n/g, '<br>');
                                 currentAssistantMsgContainer.appendChild(p);
-                                fetchHistory(); // full sync
+                                fetchHistory();
                                 currentAssistantMsgContainer = null;
                             } else if (data.type === 'error') {
                                 removeTyping();
                                 appendMessage(`Error: ${data.content}`, 'system-msg');
                             }
+                        } catch (parseError) {
+                            console.error("Error parsing SSE line:", parseError, line);
                         }
                     }
                 }
@@ -369,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateContextItem(card, title, snippet, type, tokens = 100, fullContent = '') {
-        const MAX_CONTEXT = 8192;
+        const MAX_CONTEXT = appConfig.OLLAMA_NUM_CTX;
         const heightPct = (tokens / MAX_CONTEXT) * 100; // Strictly proportional
         
         // Only update if changed to avoid unnecessary reflows/flicker
@@ -508,7 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateSubContextItem(card, title, snippet, type, tokens = 100, fullContent = '') {
-        const MAX_CONTEXT = 8192;
+        const MAX_CONTEXT = appConfig.OLLAMA_NUM_CTX;
         const heightPct = (tokens / MAX_CONTEXT) * 100;
         
         const newClass = `context-card ${type}`;

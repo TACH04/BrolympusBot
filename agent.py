@@ -8,36 +8,41 @@ import ollama
 
 logger = logging.getLogger('agent')
 
-from skill_loader import load_skill_summaries, get_skill_content
 from tools import OLLAMA_TOOLS, execute_tool
 from memory_manager import MemoryManager, estimate_tokens
 
 load_dotenv()
 MODEL = os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Los_Angeles")
 
 
 def get_system_prompt():
     """Generates a dynamic system prompt with the current time and context."""
     now = datetime.datetime.now()
-    summaries = load_skill_summaries()
-
-    skill_lines = ""
-    if summaries:
-        skill_lines = "\nAvailable Skills (use `get_skill` to load full instructions for any skill before using it):\n"
-        for name, description in summaries:
-            skill_lines += f"- **{name}**: {description}\n"
-
     return f"""You are Brolympus Bot. You manage the crew's shared Google Calendar and search the web for information using the tools provided.
+Current Date and Time: {now.strftime('%A, %Y-%m-%d %H:%M:%S')}
+Timezone: {SERVER_TIMEZONE}
 
-Current Context:
-- Current Date and Time: {now.strftime('%A, %Y-%m-%d %H:%M:%S')}
-- Timezone: {SERVER_TIMEZONE}
-{skill_lines}
-If the user asks a simple question you don't know the answer to, use the `search_web` tool.
-If you need to read a specific URL in its entirety, use the `scrape_url` tool.
-When responding after a tool call, be concise and let the user know what was done.
-IMPORTANT: You must ONLY use the provided JSON tool calling mechanism when invoking tools. DO NOT respond with XML tags or raw <function> formats. If invoking a tool, do not provide any conversational preamble. Just invoke the tool.
+### 📅 CALENDAR MANAGEMENT PROTOCOLS
+1. **MANDATORY Date Verification**: When resolving relative dates (like "next Tuesday", "tomorrow", or "next weekend"), you MUST ALWAYS use the `verify_date` tool to confirm that the chosen date string actually aligns with the requested day of the week. Do this BEFORE scheduling the event.
+2. **Missing Year**: If a year is not specified, assume the current year or the next occurrence of that date.
+3. **Always Confirm Details**: When scheduling events, always confirm the time and duration.
+4. **Event Editing**: To edit an event, delete the original event and create a new one with the updated details. Do not attempt to modify events in place.
+
+### 🔍 WEB SEARCH & INVESTIGATION PROTOCOLS
+1. **Tool Hierarchy**:
+   - `search_web`: Use for quick facts, current headlines, or finding URLs.
+   - `scrape_url`: Use to read the full content of a specific page when snippets aren't enough.
+   - `investigate_topic`: Use for complex questions requiring synthesis from multiple sources or a comprehensive report.
+2. **Multi-Query Strategy**: Never rely on a single search query for complex topics. If the first fails, rephrase and try again.
+3. **Citation**: Cite your findings if possible (e.g., "According to [Source Name]...").
+4. **No Placeholders**: Do not guess or hallucinate details missing from search results.
+
+### RESPONSE GUIDELINES
+- Be concise.
+- Let the user know what tool actions were taken.
+- IMPORTANT: Use ONLY the JSON tool calling mechanism. No XML, no preamble.
 """
 
 
@@ -47,14 +52,12 @@ class CalendarAgent:
         self.model = MODEL
         self.last_activity_time = time.time()
         self.memory = MemoryManager(model=self.model)
-        self.loaded_skills = set()
         self.reset()
 
     def reset(self):
         prompt = get_system_prompt()
         self.memory.reset({"role": "system", "content": prompt})
         self.last_activity_time = time.time()
-        self.loaded_skills = set()
 
     @property
     def messages(self):
@@ -119,7 +122,8 @@ class CalendarAgent:
                     model=self.model,
                     messages=self.messages,
                     tools=OLLAMA_TOOLS,
-                    stream=True
+                    stream=True,
+                    options={"num_ctx": OLLAMA_NUM_CTX}
                 )
                 
                 # Streaming assembly
@@ -188,35 +192,21 @@ class CalendarAgent:
                         tool_name = tool_call['function']['name']
                         tool_args = tool_call['function']['arguments']
 
-                        # --- SAFETY LOCK ENFORCEMENT ---
-                        from tools import registry
-                        req_skill = registry.get_required_skill(tool_name)
-                        
-                        if req_skill and req_skill not in self.loaded_skills:
-                            logger.warning(f"Safety Lock: Agent attempted to use {tool_name} without loading '{req_skill}' skill.")
-                            tool_result = f"Error: Access to tool '{tool_name}' is locked. You must call `get_skill(skill_name='{req_skill}')` first to read the mandatory safety protocols and usage instructions for this capability."
-                        else:
-                            yield {
-                                "type": "tool_call",
-                                "tool": tool_name,
-                                "args": tool_args,
-                                "tokens": estimate_tokens(tool_name) + estimate_tokens(str(tool_args))
-                            }
+                        yield {
+                            "type": "tool_call",
+                            "tool": tool_name,
+                            "args": tool_args,
+                            "tokens": estimate_tokens(tool_name) + estimate_tokens(str(tool_args))
+                        }
 
-                            import inspect
-                            
-                            raw_result = execute_tool(tool_name, tool_args)
-                            if inspect.isawaitable(raw_result):
-                                tool_result = await raw_result
-                            else:
-                                tool_result = raw_result
-                            
-                            # If we just called get_skill successfully, add it to our loaded set
-                            if tool_name == "get_skill" and "not found" not in str(tool_result).lower():
-                                skill_name = tool_args.get("skill_name")
-                                if skill_name:
-                                    self.loaded_skills.add(skill_name)
-                                    logger.info(f"Skill successfully loaded: {skill_name}")
+                        import inspect
+                        
+                        raw_result = execute_tool(tool_name, tool_args)
+                        if inspect.isawaitable(raw_result):
+                            tool_result = await raw_result
+                        else:
+                            tool_result = raw_result
+                        
 
                         if isinstance(tool_result, dict) and tool_result.get("SPAWN_SUBAGENT"):
                             query = tool_result.get("query")
@@ -236,7 +226,7 @@ class CalendarAgent:
                             subagent = ResearchAgent(model=self.model, debug_callback=capture_debug)
                             report = ""
                             
-                            yield {"type": "subagent_start", "content": "Deep research initiated"}
+                            yield {"type": "subagent_start", "content": "Investigation initiated"}
                             
                             async for sub_event in subagent.research_loop(query, brief):
                                 while debug_events:

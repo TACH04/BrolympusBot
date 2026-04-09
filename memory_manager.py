@@ -9,15 +9,19 @@ Handles within-session context management for the CalendarAgent:
 No persistence between sessions — this is ephemeral, in-memory only.
 """
 
+import os
 import logging
 import ollama
+from dotenv import load_dotenv
 
+load_dotenv()
 logger = logging.getLogger("memory_manager")
 
 # Default thresholds
-COMPRESSION_THRESHOLD = 6000   # ~75% of 8K context window
-MIN_RECENT_MESSAGES = 8        # raw messages always preserved at the tail
-TOOL_RESULT_CHAR_LIMIT = 2000  # characters before a tool result is pruned
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
+COMPRESSION_THRESHOLD = int(OLLAMA_NUM_CTX * 0.8)   # 80% of context window
+MIN_RECENT_MESSAGES = 10        # raw messages always preserved at the tail
+TOOL_RESULT_CHAR_LIMIT = 12000  # characters before a tool result is pruned (~3k tokens)
 
 
 def estimate_tokens(text) -> int:
@@ -91,7 +95,8 @@ class MemoryManager:
         tool_name = message.get("name", "unknown")
         
         # dynamic limits based on tool
-        char_limit = 6000 if tool_name in ["research_agent", "scrape_url"] else self.tool_result_char_limit
+        research_limit = OLLAMA_NUM_CTX * 2 # Allow more for research/scrapes if ctx is large
+        char_limit = research_limit if tool_name in ["research_agent", "scrape_url"] else self.tool_result_char_limit
         
         if len(content) > char_limit:
             preview = content[: char_limit]
@@ -148,7 +153,12 @@ class MemoryManager:
             yield {"type": "debug_event", "category": "briefing", "content": f"--- Internal Prompt ---\n{transcript}\n-----------------------"}
                 
             client = ollama.AsyncClient()
-            response = await client.chat(model=self.model, messages=brief_messages, stream=True)
+            response = await client.chat(
+                model=self.model, 
+                messages=brief_messages, 
+                stream=True,
+                options={"num_ctx": OLLAMA_NUM_CTX}
+            )
             
             brief = ""
             async for chunk in response:
@@ -241,6 +251,7 @@ class MemoryManager:
                 model=self.model,
                 messages=summarizer_messages,
                 stream=True,
+                options={"num_ctx": OLLAMA_NUM_CTX}
             )
             
             summary_text = ""

@@ -11,6 +11,7 @@ SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")
 FIRECRAWL_URL = os.getenv("FIRECRAWL_URL", "http://localhost:3002")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 
 import urllib.parse
 import re
@@ -81,9 +82,11 @@ async def summarize_scrape(md_content, query, debug_callback=None):
         
     # Quick cleaning: strip image tags to save tokens
     clean_md = re.sub(r'!\[.*?\]\(.*?\)', '', md_content)
-    # Basic truncation to ensure we don't blow up Ollama context
-    if len(clean_md) > 24000: # ~6K context size allowance roughly
-        clean_md = clean_md[:24000]
+    # Truncation to ensure we don't blow up Ollama context
+    # 1 token approx 4 chars. We take OLLAMA_NUM_CTX * 3 to be safe.
+    max_chars = OLLAMA_NUM_CTX * 3
+    if len(clean_md) > max_chars:
+        clean_md = clean_md[:max_chars]
         
     messages = [
         {
@@ -103,7 +106,12 @@ async def summarize_scrape(md_content, query, debug_callback=None):
     
     try:
         client = ollama.AsyncClient()
-        response = await client.chat(model=OLLAMA_MODEL, messages=messages, stream=True)
+        response = await client.chat(
+            model=OLLAMA_MODEL, 
+            messages=messages, 
+            stream=True,
+            options={"num_ctx": OLLAMA_NUM_CTX}
+        )
         
         summary = ""
         async for chunk in response:
@@ -156,9 +164,9 @@ async def scrape_url(url, query=None, debug_callback=None):
             summary = await summarize_scrape(md_content, query, debug_callback=debug_callback)
             return f"--- SCRAPED & SUMMARIZED CONTENT FROM {url} ---\n{summary}\n--- END SUMMARY ---"
         else:
-            CHAR_LIMIT = 4000
+            CHAR_LIMIT = OLLAMA_NUM_CTX * 2 # Larger limit for raw content if no query
             if len(md_content) > CHAR_LIMIT:
-                md_content = md_content[:CHAR_LIMIT] + "... [Content Truncated due to length without specific query]"
+                md_content = md_content[:CHAR_LIMIT] + f"... [Content Truncated at {CHAR_LIMIT} chars]"
             return f"--- SCRAPED CONTENT FROM {url} ---\n{md_content}\n--- END SCRAPED CONTENT ---"
         
     except requests.exceptions.RequestException as e:
