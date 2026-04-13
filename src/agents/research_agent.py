@@ -64,7 +64,7 @@ class ResearchAgent:
 
     async def execute_sub_tool(self, name, args):
         if name == "search_web":
-            return search_web(args.get("query"), args.get("max_results", 5))
+            return await search_web(args.get("query"), args.get("max_results", 5))
         elif name == "scrape_url":
             # scrape_url is async now, so we await it
             return await scrape_url(args.get("url"), args.get("query"), debug_callback=self.debug_callback)
