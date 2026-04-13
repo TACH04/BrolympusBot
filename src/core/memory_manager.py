@@ -26,11 +26,14 @@ MIN_RECENT_MESSAGES = 10        # raw messages always preserved at the tail
 TOOL_RESULT_CHAR_LIMIT = 12000  # characters before a tool result is pruned (~3k tokens)
 
 
-def estimate_tokens(text) -> int:
-    """Rough estimate: 1 token ≈ 4 characters."""
-    if not text:
-        return 0
-    return len(str(text)) // 4
+IMAGE_TOKENS_ESTIMATE = 1000  # Approximate tokens consumed by one image in a vision model
+
+def estimate_tokens(text=None, images: list = None) -> int:
+    """Rough estimate: 1 token ≈ 4 characters, plus IMAGE_TOKENS_ESTIMATE per image."""
+    token_count = len(str(text)) // 4 if text else 0
+    if images:
+        token_count += IMAGE_TOKENS_ESTIMATE * len(images)
+    return token_count
 
 
 class MemoryManager:
@@ -67,7 +70,10 @@ class MemoryManager:
         if message.get("role") == "tool":
             message = self._maybe_prune_tool_result(message)
         if "tokens" not in message:
-            message["tokens"] = estimate_tokens(message.get("content", ""))
+            message["tokens"] = estimate_tokens(
+                message.get("content", ""),
+                images=message.get("images"),
+            )
         self.messages.append(message)
 
     def get_total_tokens(self) -> int:

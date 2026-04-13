@@ -70,7 +70,22 @@ class GeneralAgent:
         return self.memory.compression_count
 
     def get_history(self):
-        return self.memory.messages
+        """Returns a JSON-serializable version of the message history."""
+        import base64
+        serializable_messages = []
+        for msg in self.memory.messages:
+            full_msg = dict(msg)
+            if 'images' in full_msg and full_msg['images']:
+                # Convert bytes to base64 strings for frontend delivery
+                b64_images = []
+                for img in full_msg['images']:
+                    if isinstance(img, bytes):
+                        b64_images.append(base64.b64encode(img).decode('utf-8'))
+                    else:
+                        b64_images.append(img)
+                full_msg['images'] = b64_images
+            serializable_messages.append(full_msg)
+        return serializable_messages
 
     def get_total_tokens(self):
         return self.memory.get_total_tokens()
@@ -87,21 +102,41 @@ class GeneralAgent:
             "compression_count": self.compression_count,
         }
 
-    async def chat_step(self, user_input=None, sender_name=None):
+    def check_auto_reset(self):
+        """Reset conversation if inactive for > 10 minutes."""
+        now = time.time()
+        if now - self.last_activity_time > 600:
+            logger.info("Session inactive for > 10 minutes. Auto-resetting context.")
+            self.reset()
+            return True
+        return False
+
+    async def chat_step(self, user_input=None, sender_name=None, images: list = None):
         """
         Takes user input, appends to history, and processes one turn of Ollama (async).
         Yields status updates and intermediate results.
+
+        Args:
+            user_input: The text message from the user.
+            sender_name: Optional display name of the sender.
+            images: Optional list of raw image bytes to pass to the vision model.
         """
+        self.check_auto_reset()
         self.last_activity_time = time.time()
 
         # Async Ollama client
         client = ollama.AsyncClient()
 
-        if user_input:
-            msg_content = f"[Sender: {sender_name}] {user_input}" if sender_name else user_input
-            self.memory.append({"role": "user", "content": msg_content})
+        if user_input or images:
+            msg_content = f"[Sender: {sender_name}] {user_input}" if sender_name else (user_input or "")
+            user_msg = {"role": "user", "content": msg_content}
+            if images:
+                user_msg["images"] = images
+                logger.info(f"User message includes {len(images)} image(s).")
+            self.memory.append(user_msg)
 
-            yield {"type": "status", "content": "Assistant is thinking...", "tokens": 0}
+            vision_note = f" (with {len(images)} image{'s' if len(images) > 1 else ''})" if images else ""
+            yield {"type": "status", "content": f"Assistant is thinking{vision_note}...", "tokens": 0}
             
         try:
             MAX_TURNS = 1000

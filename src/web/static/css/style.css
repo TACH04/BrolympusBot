@@ -621,4 +621,129 @@ body {
     font-family: monospace;
 }
 
+/* Image attachment controls */
+.attach-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.2s, transform 0.2s;
+    position: relative;
+}
 
+.attach-btn:hover {
+    color: var(--tool-color);
+    transform: rotate(-15deg) scale(1.1);
+}
+
+.attach-btn.has-images {
+    color: var(--tool-color);
+}
+
+.attach-btn .img-count-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--tool-color);
+    color: white;
+    font-size: 0.6rem;
+    font-weight: 700;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* Preview strip */
+.image-preview-strip {
+    display: flex;
+    gap: 10px;
+    padding: 10px 4px 6px 4px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-border) transparent;
+}
+
+.image-preview-strip::-webkit-scrollbar {
+    height: 4px;
+}
+.image-preview-strip::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 2px;
+}
+
+.image-thumb-wrapper {
+    position: relative;
+    flex-shrink: 0;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.image-thumb {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    display: block;
+    transition: box-shadow 0.2s;
+}
+
+.image-thumb:hover {
+    box-shadow: 0 0 10px var(--tool-color);
+}
+
+.image-thumb-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--error-color);
+    border: none;
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s;
+    line-height: 1;
+}
+
+.image-thumb-remove:hover {
+    transform: scale(1.2);
+}
+
+/* User message image grid */
+.msg-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.msg-image {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.msg-image:hover {
+    opacity: 0.85;
+}

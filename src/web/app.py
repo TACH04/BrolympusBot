@@ -6,6 +6,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
 import os
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -48,27 +49,42 @@ def index():
 def chat():
     """Handles chat messages via Server-Sent Events for live updates."""
     data = request.json
-    user_input = data.get("message")
-    
-    if not user_input:
+    user_input = data.get("message", "")
+    image_b64_list = data.get("images", [])  # list of base64-encoded image strings
+
+    # Decode images from base64
+    image_bytes_list = []
+    for b64 in image_b64_list:
+        try:
+            # Strip data-URL prefix if present (e.g. "data:image/png;base64,...")
+            if "," in b64:
+                b64 = b64.split(",", 1)[1]
+            image_bytes_list.append(base64.b64decode(b64))
+        except Exception as e:
+            logger.warning(f"Failed to decode image: {e}")
+
+    if not user_input and not image_bytes_list:
         logger.warning("Empty message received at /api/chat")
         return jsonify({"error": "No message provided"}), 400
-    
-    logger.info(f"Received chat request: '{user_input}'")
-        
+
+    if not user_input and image_bytes_list:
+        user_input = "What do you see in this image?"
+
+    logger.info(f"Received chat request: '{user_input}' with {len(image_bytes_list)} image(s)")
+
     def generate():
         # Create a new event loop to run the async generator synchronously for Flask
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        gen = agent.chat_step(user_input)
-        
+        gen = agent.chat_step(user_input, images=image_bytes_list if image_bytes_list else None)
+
         full_response = ""
-        
+
         try:
             while True:
                 try:
                     event = loop.run_until_complete(gen.__anext__())
-                    
+
                     if event['type'] == 'tool_call':
                         logger.info(f"Agent tool call: {event['tool']} with args: {event['args']}")
                     elif event['type'] == 'message':
@@ -76,7 +92,7 @@ def chat():
                         logger.info(f"Agent final response: '{full_response[:100]}...' (Tokens: {event.get('tokens', 'N/A')})")
                     elif event['type'] == 'error':
                         logger.error(f"Agent error: {event['content']}")
-                    
+
                     yield f"data: {json.dumps(event)}\n\n"
                 except StopAsyncIteration:
                     break
@@ -86,7 +102,7 @@ def chat():
         finally:
             loop.close()
             logger.info("Chat stream generation completed.")
-            
+
     return Response(generate(), mimetype="text/event-stream")
 
 @app.route("/api/history", methods=["GET"])

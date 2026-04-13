@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeModalBtn = document.getElementById('close-modal');
     const tokenCount = document.getElementById('token-count');
     const stopBtn = document.getElementById('stop-btn');
+    const attachBtn = document.getElementById('attach-btn');
+    const imageInput = document.getElementById('image-input');
+    const imagePreviewStrip = document.getElementById('image-preview-strip');
     let currentSubAssistantMsgContainer = null;
     
     let chatMessagesRendered = 0;
@@ -59,6 +62,86 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isWaiting = false;
     let abortController = null;
+
+    // ---- Image attachment state ----
+    let pendingImages = []; // Array of { file: File, dataUrl: string }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function renderPreviewStrip() {
+        imagePreviewStrip.innerHTML = '';
+        if (pendingImages.length === 0) {
+            imagePreviewStrip.classList.add('hidden');
+            attachBtn.classList.remove('has-images');
+            // Remove count badge
+            const badge = attachBtn.querySelector('.img-count-badge');
+            if (badge) badge.remove();
+            return;
+        }
+        imagePreviewStrip.classList.remove('hidden');
+        attachBtn.classList.add('has-images');
+        // Update or create count badge
+        let badge = attachBtn.querySelector('.img-count-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'img-count-badge';
+            attachBtn.appendChild(badge);
+        }
+        badge.textContent = pendingImages.length;
+
+        pendingImages.forEach((img, idx) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'image-thumb-wrapper';
+
+            const thumb = document.createElement('img');
+            thumb.className = 'image-thumb';
+            thumb.src = img.dataUrl;
+            thumb.title = img.file.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'image-thumb-remove';
+            removeBtn.textContent = '×';
+            removeBtn.title = 'Remove image';
+            removeBtn.addEventListener('click', () => {
+                pendingImages.splice(idx, 1);
+                renderPreviewStrip();
+            });
+
+            wrapper.appendChild(thumb);
+            wrapper.appendChild(removeBtn);
+            imagePreviewStrip.appendChild(wrapper);
+        });
+    }
+
+    attachBtn.addEventListener('click', () => {
+        imageInput.value = ''; // Reset so same file can be re-selected
+        imageInput.click();
+    });
+
+    imageInput.addEventListener('change', async () => {
+        const files = Array.from(imageInput.files);
+        for (const file of files) {
+            if (pendingImages.length >= 5) {
+                showToast('Max 5 images per message', 'info');
+                break;
+            }
+            try {
+                const dataUrl = await readFileAsDataUrl(file);
+                pendingImages.push({ file, dataUrl });
+            } catch (e) {
+                console.error('Failed to read file:', e);
+            }
+        }
+        renderPreviewStrip();
+    });
+    // ---- End image attachment state ----
 
     // Load initial config and history
     fetchConfig();
@@ -199,27 +282,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const text = chatInput.value.trim();
-        if (!text) return;
+        const hasImages = pendingImages.length > 0;
+        if (!text && !hasImages) return;
 
+        const imagesToSend = [...pendingImages]; // snapshot before clearing
         chatInput.value = '';
-        appendMessage(text, 'user-msg');
+
+        // Build & display user message bubble with optional image thumbnails
+        const userMsgDiv = appendMessage(text || '', 'user-msg');
+        if (imagesToSend.length > 0) {
+            const imgGrid = document.createElement('div');
+            imgGrid.className = 'msg-images';
+            imagesToSend.forEach(img => {
+                const el = document.createElement('img');
+                el.className = 'msg-image';
+                el.src = img.dataUrl;
+                el.title = img.file.name;
+                imgGrid.appendChild(el);
+            });
+            userMsgDiv.appendChild(imgGrid);
+        }
+
         chatMessagesRendered++;
-        addContextItem('User', text, 'user', estimateTokens(text));
-        
+        addContextItem('User', text || `[${imagesToSend.length} image(s)]`, 'user', estimateTokens(text) + imagesToSend.length * 1000);
+
+        // Clear pending images
+        pendingImages = [];
+        renderPreviewStrip();
+
         isWaiting = true;
         abortController = new AbortController();
-        
+
         // Update UI
         sendBtn.style.display = 'none';
         stopBtn.style.display = 'flex';
-        
+
         const typingId = showTyping();
+
+        // Build base64 image array for API
+        const imageB64Array = imagesToSend.map(img => img.dataUrl); // dataUrl already has the data:... prefix
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text }),
+                body: JSON.stringify({ message: text, images: imageB64Array }),
                 signal: abortController.signal
             });
 

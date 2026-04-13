@@ -5,6 +5,7 @@ import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
+import aiohttp
 from agents.agent import GeneralAgent
 
 # Configure logging
@@ -46,6 +47,8 @@ class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.tasks = {}
+        self.http_session = None
+
     def get_session(self, channel_id: int):
         """Returns the (CalendarAgent, asyncio.Lock) for a given channel."""
         if channel_id not in self.sessions:
@@ -60,10 +63,53 @@ class SessionManager:
         session['last_access'] = asyncio.get_event_loop().time()
         return session['agent'], session['lock']
 
+    async def close(self):
+        """Close the shared HTTP session."""
+        if self.http_session:
+            await self.http_session.close()
+            logger.info("Shared HTTP session closed.")
+
 session_manager = SessionManager()
+
+# Supported image MIME types for vision
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+MAX_IMAGES_PER_MESSAGE = 5
+
+async def download_images(attachments) -> list[bytes]:
+    """Download image attachments from a Discord message and return them as a list of bytes."""
+    image_bytes_list = []
+    image_attachments = [
+        a for a in attachments
+        if a.content_type and a.content_type.split(';')[0].strip() in IMAGE_MIME_TYPES
+    ][:MAX_IMAGES_PER_MESSAGE]
+
+    if not image_attachments:
+        return []
+
+    if not session_manager.http_session:
+        session_manager.http_session = aiohttp.ClientSession()
+        logger.info("Initialized shared HTTP session for image downloads.")
+
+    session = session_manager.http_session
+    for attachment in image_attachments:
+        try:
+            async with session.get(attachment.url) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    image_bytes_list.append(data)
+                    logger.info(f"Downloaded image attachment: {attachment.filename} ({len(data)} bytes)")
+                else:
+                    logger.warning(f"Failed to download attachment {attachment.filename}: HTTP {resp.status}")
+        except Exception as e:
+            logger.error(f"Error downloading attachment {attachment.filename}: {e}")
+
+    return image_bytes_list
 
 @bot.event
 async def on_ready():
+    if not session_manager.http_session:
+        session_manager.http_session = aiohttp.ClientSession()
+        logger.info("Initialized shared HTTP session on bot ready.")
     logger.info(f'✅ Logged in as {bot.user.name} ({bot.user.id})')
     logger.info(f'Connected to {len(bot.guilds)} server(s):')
     for guild in bot.guilds:
@@ -155,13 +201,20 @@ async def on_message(message):
         # Also handle the variant mention with '!' which sometimes appears
         content = content.replace(mention_str.replace('<@', '<@!'), '').strip()
 
-    # If the message is empty after stripping the mention, don't respond
-    if not content and is_mentioned:
+    # Download any image attachments
+    images = await download_images(message.attachments)
+
+    # If the message has no text and no images after stripping the mention, don't respond
+    if not content and not images and is_mentioned:
         await message.reply("How can I help the squad today? (Type `!help` for commands)")
         return
+    
+    # If there's no text at all (pure image, no mention text) don't respond to non-DM/non-mention
+    if not content and images and is_mentioned:
+        content = "What do you see in this image?"
 
     # Handle reply in a separate task so it can be cancelled
-    task = asyncio.create_task(process_and_reply(message, content, is_mentioned))
+    task = asyncio.create_task(process_and_reply(message, content, is_mentioned, images))
     session_manager.tasks[message.channel.id] = task
     
     try:
@@ -175,7 +228,7 @@ async def on_message(message):
         if session_manager.tasks.get(message.channel.id) == task:
             del session_manager.tasks[message.channel.id]
 
-async def process_and_reply(message, content, is_mentioned):
+async def process_and_reply(message, content, is_mentioned, images: list = None):
     sender_name = message.author.display_name
     server_name = message.guild.name if message.guild else "DM"
     channel_name = message.channel.name if hasattr(message.channel, 'name') else "DM"
@@ -204,7 +257,7 @@ async def process_and_reply(message, content, is_mentioned):
         tools_used = []
         
         try:
-            async for event in agent.chat_step(content, sender_name=sender_name):
+            async for event in agent.chat_step(content, sender_name=sender_name, images=images or []):
                 if event['type'] == 'status':
                     # Always show status until the actual streaming response starts
                     if not current_content:
