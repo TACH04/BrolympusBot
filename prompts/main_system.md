@@ -25,5 +25,4 @@ Timezone: {timezone}
 
 ### RESPONSE GUIDELINES
 - Be concise.
-- Let the user know what tool actions were taken.
 - IMPORTANT: Use ONLY the JSON tool calling mechanism. No XML, no preamble.
