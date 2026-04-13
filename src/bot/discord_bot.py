@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 import os
+import json
+import time
 import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
@@ -43,25 +45,168 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Session Management
+SESSION_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'sessions')
+SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
+# Max number of recent messages whose image data is persisted to disk
+SESSION_IMAGE_TURNS_KEPT = int(os.getenv("SESSION_IMAGE_TURNS_KEPT", "3"))
+
+
 class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.tasks = {}
         self.http_session = None
+        self._init_lock = asyncio.Lock()
+        os.makedirs(SESSION_DIR, exist_ok=True)
 
-    def get_session(self, channel_id: int):
-        """Returns the (CalendarAgent, asyncio.Lock) for a given channel."""
-        if channel_id not in self.sessions:
-            logger.info(f"Creating new session for channel {channel_id}")
-            self.sessions[channel_id] = {
-                'agent': GeneralAgent(),
-                'lock': asyncio.Lock(),
-                'last_access': asyncio.get_event_loop().time()
-            }
-        
+    # ------------------------------------------------------------------
+    # Session access
+    # ------------------------------------------------------------------
+
+    async def get_session(self, channel_id: int):
+        """Returns the (GeneralAgent, asyncio.Lock) for a given channel."""
+        if channel_id in self.sessions:
+            session = self.sessions[channel_id]
+            session['last_access'] = asyncio.get_event_loop().time()
+            return session['agent'], session['lock']
+
+        async with self._init_lock:
+            # Double-check after acquiring the lock to avoid redundant loads
+            if channel_id not in self.sessions:
+                agent = GeneralAgent()
+                loaded = await self._load_session(channel_id, agent)
+                if loaded:
+                    logger.info(f"Restored persisted session for channel {channel_id}.")
+                else:
+                    logger.info(f"Creating new session for channel {channel_id}.")
+                self.sessions[channel_id] = {
+                    'agent': agent,
+                    'lock': asyncio.Lock(),
+                    'last_access': asyncio.get_event_loop().time()
+                }
+
         session = self.sessions[channel_id]
         session['last_access'] = asyncio.get_event_loop().time()
         return session['agent'], session['lock']
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+
+    def _session_path(self, channel_id: int) -> str:
+        return os.path.join(SESSION_DIR, f"{channel_id}.json")
+
+    async def save_session(self, channel_id: int):
+        """Serialize and save the current session to disk."""
+        if channel_id not in self.sessions:
+            return
+        agent = self.sessions[channel_id]['agent']
+        try:
+            messages = self._prune_images_for_storage(agent.get_history())
+            payload = {
+                "channel_id": channel_id,
+                "saved_at": time.time(),
+                "messages": messages,
+            }
+            path = self._session_path(channel_id)
+            
+            def do_save():
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(payload, f, ensure_ascii=False)
+            
+            await asyncio.to_thread(do_save)
+            logger.debug(f"Session saved for channel {channel_id} ({len(messages)} messages).")
+        except Exception as e:
+            logger.error(f"Failed to save session for channel {channel_id}: {e}")
+
+    async def _load_session(self, channel_id: int, agent: GeneralAgent) -> bool:
+        """Load a persisted session from disk into the given agent. Returns True on success."""
+        path = self._session_path(channel_id)
+        
+        exists = await asyncio.to_thread(os.path.exists, path)
+        if not exists:
+            return False
+            
+        try:
+            def do_load():
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            
+            payload = await asyncio.to_thread(do_load)
+            messages = payload.get("messages", [])
+            if not messages:
+                return False
+            agent.load_history(messages)
+            return True
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Session file corrupted for channel {channel_id}, deleting: {e}")
+            await self.delete_session_file(channel_id)
+            return False
+        except Exception as e:
+            logger.error(f"Failed to load session for channel {channel_id}: {e}")
+            return False
+
+    async def delete_session_file(self, channel_id: int):
+        """Remove the persisted session file for a channel."""
+        path = self._session_path(channel_id)
+        exists = await asyncio.to_thread(os.path.exists, path)
+        if exists:
+            try:
+                await asyncio.to_thread(os.remove, path)
+                logger.info(f"Deleted session file for channel {channel_id}.")
+            except Exception as e:
+                logger.error(f"Failed to delete session file for channel {channel_id}: {e}")
+
+    # ------------------------------------------------------------------
+    # Storage management
+    # ------------------------------------------------------------------
+
+    def _prune_images_for_storage(self, messages: list[dict]) -> list[dict]:
+        """
+        Strip image data from all but the most recent SESSION_IMAGE_TURNS_KEPT
+        user messages. This keeps disk usage manageable while preserving recent
+        visual context.
+        """
+        # Find indices of user messages that have images, newest first
+        image_msg_indices = [
+            i for i, m in enumerate(messages)
+            if m.get("role") == "user" and m.get("images")
+        ]
+        # Keep images only for the last N turns
+        keep_indices = set(image_msg_indices[-SESSION_IMAGE_TURNS_KEPT:])
+
+        pruned = []
+        for i, msg in enumerate(messages):
+            m = dict(msg)
+            if m.get("images") and i not in keep_indices:
+                m = {k: v for k, v in m.items() if k != "images"}
+            pruned.append(m)
+        return pruned
+
+    async def _cleanup_old_sessions(self):
+        """Delete session files that haven't been updated within SESSION_TTL_DAYS."""
+        cutoff = time.time() - SESSION_TTL_DAYS * 86400
+        removed = 0
+        try:
+            def get_old_files():
+                to_remove = []
+                for fname in os.listdir(SESSION_DIR):
+                    if not fname.endswith('.json'):
+                        continue
+                    fpath = os.path.join(SESSION_DIR, fname)
+                    if os.path.getmtime(fpath) < cutoff:
+                        to_remove.append(fpath)
+                return to_remove
+
+            old_files = await asyncio.to_thread(get_old_files)
+            for fpath in old_files:
+                await asyncio.to_thread(os.remove, fpath)
+                removed += 1
+                
+            if removed:
+                logger.info(f"Cleaned up {removed} expired session file(s) (TTL={SESSION_TTL_DAYS}d).")
+        except Exception as e:
+            logger.error(f"Error during session cleanup: {e}")
 
     async def close(self):
         """Close the shared HTTP session."""
@@ -130,6 +275,10 @@ async def on_ready():
     if not session_manager.http_session:
         session_manager.http_session = aiohttp.ClientSession()
         logger.info("Initialized shared HTTP session on bot ready.")
+    
+    # Start background cleanup of old sessions
+    asyncio.create_task(session_manager._cleanup_old_sessions())
+    
     logger.info(f'✅ Logged in as {bot.user.name} ({bot.user.id})')
     logger.info(f'Connected to {len(bot.guilds)} server(s):')
     for guild in bot.guilds:
@@ -169,16 +318,17 @@ async def stop_cmd(ctx):
 async def clear_cmd(ctx):
     """Reset the conversation context."""
     logger.info(f"User {ctx.author} ran !clear command in channel {ctx.channel.id}.")
-    agent, lock = session_manager.get_session(ctx.channel.id)
+    agent, lock = await session_manager.get_session(ctx.channel.id)
     async with lock:
         agent.reset()
+        await session_manager.delete_session_file(ctx.channel.id)
         await ctx.send("✅ Conversation context for this channel has been cleared.")
 
 @bot.command(name='session')
 async def session_cmd(ctx):
     """Display current session details."""
     logger.info(f"User {ctx.author} ran !session command in channel {ctx.channel.id}.")
-    agent, _ = session_manager.get_session(ctx.channel.id)
+    agent, _ = await session_manager.get_session(ctx.channel.id)
     info = agent.get_session_info()
     idle_str = f"{info['idle_seconds']} seconds"
     if info['idle_seconds'] > 60:
@@ -261,7 +411,7 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
     
     logger.info(f"Processing message from {sender_name} in [{server_name} | #{channel_name}]: '{content}'")
     
-    agent, lock = session_manager.get_session(message.channel.id)
+    agent, lock = await session_manager.get_session(message.channel.id)
     
     # Use a lock to process channel messages sequentially
     if lock.locked():
@@ -343,6 +493,9 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                 else:
                     current_content += f"\n\n[View Event on Google Calendar]({link})"
                     
+            # Save session to disk after each successful response
+            await session_manager.save_session(message.channel.id)
+
             if current_content:
                 # Append tools used if any
                 if tools_used:

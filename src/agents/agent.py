@@ -60,6 +60,38 @@ class GeneralAgent:
         self.memory.reset({"role": "system", "content": prompt})
         self.last_activity_time = time.time()
 
+    def load_history(self, messages: list[dict]):
+        """
+        Restore agent memory from a persisted list of messages (e.g., loaded from disk).
+        Images are expected to be Base64-encoded strings and are decoded back to bytes.
+        The current system prompt is always prepended, replacing any saved one.
+        """
+        import base64
+        restored = []
+        for msg in messages:
+            # Skip saved system messages — we always regenerate a fresh one
+            if msg.get("role") == "system" and not msg.get("is_memory"):
+                continue
+            m = dict(msg)
+            if m.get("images"):
+                decoded_images = []
+                for img in m["images"]:
+                    if isinstance(img, str):
+                        try:
+                            decoded_images.append(base64.b64decode(img))
+                        except Exception:
+                            decoded_images.append(img)  # keep as-is if decode fails
+                    else:
+                        decoded_images.append(img)
+                m["images"] = decoded_images
+            restored.append(m)
+
+        # Prepend a fresh system prompt, then load the rest
+        fresh_system = {"role": "system", "content": get_system_prompt()}
+        self.memory.load_messages([fresh_system] + restored)
+        self.last_activity_time = time.time()
+        logger.info(f"GeneralAgent: session restored with {len(restored)} historical messages.")
+
     @property
     def messages(self):
         """Expose the underlying message list (for compatibility with callers)."""

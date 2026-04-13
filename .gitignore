@@ -15,3 +15,6 @@ debug.txt
 *.log
 modelfile_dump.txt
 memory-plan.md
+
+# Persisted Discord session context
+data/sessions/

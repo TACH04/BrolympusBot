@@ -89,6 +89,23 @@ class MemoryManager:
         self.messages = [system_message]
         self.compression_count = 0
 
+    def load_messages(self, messages: list[dict]):
+        """
+        Replace the current message list with a pre-loaded list (e.g., from disk).
+        Recalculates token estimates for any messages missing them.
+        The caller is responsible for ensuring the system prompt is included.
+        """
+        hydrated = []
+        for msg in messages:
+            if "tokens" not in msg:
+                msg["tokens"] = estimate_tokens(
+                    msg.get("content", ""),
+                    images=msg.get("images"),
+                )
+            hydrated.append(msg)
+        self.messages = hydrated
+        logger.info(f"MemoryManager: loaded {len(hydrated)} messages from persisted state.")
+
     # ------------------------------------------------------------------
     # Tool Result Pruning
     # ------------------------------------------------------------------
