@@ -46,8 +46,6 @@ class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.tasks = {}
-        self.cleanup_task = None
-
     def get_session(self, channel_id: int):
         """Returns the (CalendarAgent, asyncio.Lock) for a given channel."""
         if channel_id not in self.sessions:
@@ -62,20 +60,6 @@ class SessionManager:
         session['last_access'] = asyncio.get_event_loop().time()
         return session['agent'], session['lock']
 
-    async def cleanup_loop(self):
-        """Periodically removes sessions that have been inactive for > 1 hour."""
-        while True:
-            await asyncio.sleep(600) # Check every 10 minutes
-            now = asyncio.get_event_loop().time()
-            to_delete = []
-            for cid, session in self.sessions.items():
-                if now - session['last_access'] > 3600: # 1 hour
-                    to_delete.append(cid)
-            
-            for cid in to_delete:
-                logger.info(f"Cleaning up inactive session for channel {cid}")
-                del self.sessions[cid]
-
 session_manager = SessionManager()
 
 @bot.event
@@ -85,10 +69,6 @@ async def on_ready():
     for guild in bot.guilds:
         logger.info(f' - {guild.name} (ID: {guild.id})')
     
-    # Start cleanup task
-    if session_manager.cleanup_task is None:
-        session_manager.cleanup_task = asyncio.create_task(session_manager.cleanup_loop())
-        
     logger.info('Bot is ready to receive commands!')
     logger.info('------')
 
@@ -143,8 +123,7 @@ async def session_cmd(ctx):
            f"- Message Count: `{info['message_count']}`\n"
            f"- Estimated Tokens: `{info.get('estimated_tokens', '?')}` / 8000\n"
            f"- Memory Compressions: `{info.get('compression_count', 0)}`\n"
-           f"- Idle Time: `{idle_str}`\n"
-           f"(Note: I auto-reset after 10 minutes of inactivity)")
+           f"- Idle Time: `{idle_str}`")
     await ctx.send(msg)
 
 @bot.event

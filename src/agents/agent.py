@@ -87,22 +87,11 @@ class GeneralAgent:
             "compression_count": self.compression_count,
         }
 
-    def check_auto_reset(self):
-        """Reset conversation if inactive for > 10 minutes."""
-        now = time.time()
-        if now - self.last_activity_time > 600:
-            logger.info("Session inactive for > 10 minutes. Auto-resetting context.")
-            self.reset()
-            return True
-        return False
-
-
     async def chat_step(self, user_input=None, sender_name=None):
         """
         Takes user input, appends to history, and processes one turn of Ollama (async).
         Yields status updates and intermediate results.
         """
-        self.check_auto_reset()
         self.last_activity_time = time.time()
 
         # Async Ollama client
