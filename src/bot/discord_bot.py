@@ -78,12 +78,32 @@ MAX_IMAGES_PER_MESSAGE = 5
 async def download_images(attachments) -> list[bytes]:
     """Download image attachments from a Discord message and return them as a list of bytes."""
     image_bytes_list = []
-    image_attachments = [
-        a for a in attachments
-        if a.content_type and a.content_type.split(';')[0].strip() in IMAGE_MIME_TYPES
-    ][:MAX_IMAGES_PER_MESSAGE]
+    
+    # MIME types to filenames extension fallback
+    valid_exts = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+    
+    image_attachments = []
+    for a in attachments:
+        is_image = False
+        if a.content_type:
+            mime = a.content_type.split(';')[0].strip().lower()
+            if mime in IMAGE_MIME_TYPES:
+                is_image = True
+        
+        # Fallback to extension if content_type is missing or generic
+        if not is_image and a.filename:
+            ext = os.path.splitext(a.filename.lower())[1]
+            if ext in valid_exts:
+                is_image = True
+                
+        if is_image:
+            image_attachments.append(a)
+
+    image_attachments = image_attachments[:MAX_IMAGES_PER_MESSAGE]
 
     if not image_attachments:
+        if attachments:
+            logger.info(f"Skipped {len(attachments)} attachments (none matched image types).")
         return []
 
     if not session_manager.http_session:
@@ -187,6 +207,12 @@ async def on_message(message):
     is_dm = isinstance(message.channel, discord.DMChannel)
     is_mentioned = bot.user in message.mentions
     
+    # Diagnostic logging for server interaction
+    if not is_dm and is_mentioned:
+        logger.info(f"Mentioned in channel {message.channel.id} of guild {message.guild.id}. Attachments: {len(message.attachments)}")
+        for i, a in enumerate(message.attachments):
+            logger.info(f" - Attachment {i}: {a.filename} (content_type: {a.content_type})")
+
     # If not mentioned and not a DM, ignore the message
     if not (is_dm or is_mentioned):
         return
