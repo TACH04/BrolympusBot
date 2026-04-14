@@ -18,7 +18,7 @@ CALENDAR_ID = os.getenv('CALENDAR_ID', 'primary')
 
 def get_calendar_service():
     """Shows basic usage of the Google Calendar API.
-    Prints the start and name of the next 10 events on the user's calendar.
+    Prints the start and name of the next 20 events on the user's calendar.
     """
     creds = None
     # The file token.json stores the user's access and refresh tokens, and is
@@ -50,7 +50,7 @@ def get_calendar_service():
 
     return build('calendar', 'v3', credentials=creds, static_discovery=False)
 
-def list_upcoming_events(max_results=10, time_min=None):
+def list_upcoming_events(max_results=20, time_min=None):
     """
     Lists the upcoming events on the user's primary calendar.
     """

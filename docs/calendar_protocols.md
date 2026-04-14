@@ -28,7 +28,7 @@ All events are scheduled relative to the server's timezone settings.
 ## 3. Event CRUD Operations
 
 ### Listing Events
-The `list_upcoming_events` tool returns the next 10 events. It includes the **Event ID**, which is required for any further modifications.
+The `list_upcoming_events` tool returns the next 20 events. It includes the **Event ID**, which is required for any further modifications.
 
 ### Creating Events
 Requires:

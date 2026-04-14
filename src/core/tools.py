@@ -28,13 +28,13 @@ registry = ToolRegistry()
         "properties": {
             "max_results": {
                 "type": "integer",
-                "description": "The maximum number of events to list. Default is 10."
+                "description": "The maximum number of events to list. Default is 20."
             }
         },
         "required": []
     }
 )
-def list_upcoming_events_tool(max_results=10):
+def list_upcoming_events_tool(max_results=20):
     return list_upcoming_events(max_results)
 
 @registry.register(
