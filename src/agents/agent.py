@@ -60,6 +60,11 @@ class GeneralAgent:
         self.memory.reset({"role": "system", "content": prompt})
         self.last_activity_time = time.time()
 
+    def rebase(self, custom_prompt: str):
+        """Reset the agent's memory and override the system prompt."""
+        self.memory.reset({"role": "system", "content": custom_prompt})
+        self.last_activity_time = time.time()
+
     def load_history(self, messages: list[dict]):
         """
         Restore agent memory from a persisted list of messages (e.g., loaded from disk).

@@ -292,6 +292,7 @@ async def help_cmd(ctx):
     """Displays this help message."""
     help_text = """**Brolympus Bot Commands:**
 `!clear` - Reset my conversation context immediately.
+`!rebase <new prompt>` - Reset conversation context and completely replace my system prompt.
 `!stop` - Interrupt the current active task.
 `!session` - Display current session details (model, message count, idle time).
 `!help` - Display this message.
@@ -323,6 +324,21 @@ async def clear_cmd(ctx):
         agent.reset()
         await session_manager.delete_session_file(ctx.channel.id)
         await ctx.send("✅ Conversation context for this channel has been cleared.")
+
+@bot.command(name='rebase')
+async def rebase_cmd(ctx, *, new_prompt: str = None):
+    """Reset the conversation context and replace the system prompt."""
+    if not new_prompt:
+        await ctx.send("❌ You must provide a new prompt. Usage: `!rebase <new prompt>`")
+        return
+
+    logger.info(f"User {ctx.author} ran !rebase command in channel {ctx.channel.id}.")
+    agent, lock = await session_manager.get_session(ctx.channel.id)
+    async with lock:
+        agent.rebase(new_prompt)
+        await session_manager.delete_session_file(ctx.channel.id)
+        await session_manager.save_session(ctx.channel.id)
+        await ctx.send("✅ Conversation reset and system instructions updated!")
 
 @bot.command(name='session')
 async def session_cmd(ctx):
