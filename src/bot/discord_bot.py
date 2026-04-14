@@ -9,6 +9,7 @@ from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 import aiohttp
 from agents.agent import GeneralAgent
+from bot.text_chunking import DISCORD_MAX_MESSAGE_LENGTH, split_text
 
 # Configure logging
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -442,47 +443,68 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
             except:
                 pass
                 
-        response_msg = await message.reply("*(Thinking...)*")
-        current_content = ""
+        active_msg = await message.reply("*(Thinking...)*")
+        full_text = ""
+        out_chars = 0
         created_event_links = []
         last_edit_time = asyncio.get_event_loop().time()
         tools_used = []
-        
+
+        async def seal_overflow():
+            nonlocal active_msg, out_chars
+            while len(full_text) - out_chars > DISCORD_MAX_MESSAGE_LENGTH:
+                tail = full_text[out_chars:]
+                head, _ = split_text(tail, DISCORD_MAX_MESSAGE_LENGTH)
+                await active_msg.edit(content=head)
+                out_chars += len(head)
+                rem = full_text[out_chars:]
+                while len(rem) > DISCORD_MAX_MESSAGE_LENGTH:
+                    h, rem = split_text(rem, DISCORD_MAX_MESSAGE_LENGTH)
+                    active_msg = await message.reply(h)
+                    out_chars += len(h)
+                if rem:
+                    active_msg = await message.reply(rem)
+
+        async def sync_active_edit(force: bool = False):
+            nonlocal last_edit_time
+            tail = full_text[out_chars:]
+            now = asyncio.get_event_loop().time()
+            if not force and now - last_edit_time <= 1.2:
+                return
+            try:
+                await active_msg.edit(content=tail)
+                last_edit_time = now
+            except discord.errors.HTTPException as e:
+                logger.warning(f"Ignored HTTPException during message edit update: {e}")
+
         try:
             async for event in agent.chat_step(content, sender_name=sender_name, images=images or []):
                 if event['type'] == 'status':
                     # Always show status until the actual streaming response starts
-                    if not current_content:
+                    if not full_text:
                         try:
-                            await response_msg.edit(content=f"*({event['content']})*")
+                            await active_msg.edit(content=f"*({event['content']})*")
                         except Exception as e:
                             logger.warning(f"Failed to edit status: {e}")
                 elif event['type'] == 'debug_event':
                     # Surface scraping/summarization progress to the user
-                    if not current_content and event.get('category') == 'scraping':
+                    if not full_text and event.get('category') == 'scraping':
                         try:
-                            await response_msg.edit(content=f"*({event['content']})*")
+                            await active_msg.edit(content=f"*({event['content']})*")
                         except Exception as e:
                             logger.warning(f"Failed to edit debug status: {e}")
                 elif event['type'] == 'tool_call':
                     logger.info(f"Agent requested tool call: {event['tool']} with args: {event['args']}")
                     tools_used.append(event['tool'])
-                    if not current_content:
+                    if not full_text:
                         try:
-                            await response_msg.edit(content=f"*(Calling tool: {event['tool']}...)*")
+                            await active_msg.edit(content=f"*(Calling tool: {event['tool']}...)*")
                         except Exception as e:
                             logger.warning(f"Failed to edit tool call status: {e}")
                 elif event['type'] == 'stream_chunk':
-                    current_content += event['content']
-                    now = asyncio.get_event_loop().time()
-                    # Edit every 1 second to avoid rate limits
-                    if now - last_edit_time > 1.2: # increased slightly for safety
-                        try:
-                            await response_msg.edit(content=current_content)
-                            last_edit_time = now
-                        except discord.errors.HTTPException as e:
-                            logger.warning(f"Ignored HTTPException during message edit update: {e}")
-                            pass # Ignore temporary edit failures
+                    full_text += event['content']
+                    await seal_overflow()
+                    await sync_active_edit()
                 elif event['type'] == 'tool_result':
                     logger.debug(f"Tool {event['tool']} returned: {event['result']}")
                     if event['tool'] == 'create_event':
@@ -502,17 +524,17 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                     
             # Final update to ensure we didn't miss the last chunks
             # Try to embed the link in the text using markdown if "Google Calendar" is mentioned
-            if created_event_links and current_content:
+            if created_event_links and full_text:
                 link = created_event_links[0] # Grab the first created link
-                if "Google Calendar" in current_content:
-                    current_content = current_content.replace("Google Calendar", f"[Google Calendar]({link})")
+                if "Google Calendar" in full_text:
+                    full_text = full_text.replace("Google Calendar", f"[Google Calendar]({link})")
                 else:
-                    current_content += f"\n\n[View Event on Google Calendar]({link})"
-                    
+                    full_text += f"\n\n[View Event on Google Calendar]({link})"
+
             # Save session to disk after each successful response
             await session_manager.save_session(message.channel.id)
 
-            if current_content:
+            if full_text:
                 # Append tools used if any
                 if tools_used:
                     from collections import Counter
@@ -522,7 +544,7 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                     for t in tools_used:
                         if t not in unique_tools:
                             unique_tools.append(t)
-                    
+
                     tool_parts = []
                     for t in unique_tools:
                         count = counts[t]
@@ -530,19 +552,20 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                             tool_parts.append(f"`{t}` (x{count})")
                         else:
                             tool_parts.append(f"`{t}`")
-                    
-                    current_content += f"\n\n*Tools used: {', '.join(tool_parts)}*"
-    
+
+                    full_text += f"\n\n*Tools used: {', '.join(tool_parts)}*"
+
+                await seal_overflow()
                 try:
-                    await response_msg.edit(content=current_content)
+                    await active_msg.edit(content=full_text[out_chars:])
                 except discord.errors.NotFound:
                     # Message might have been deleted
                     pass
-            elif not current_content:
+            elif not full_text:
                  # Fallback if no content was generated
                  logger.warning("No content was generated by the agent.")
                  try:
-                    await response_msg.edit(content="I'm sorry, I couldn't generate a response.")
+                    await active_msg.edit(content="I'm sorry, I couldn't generate a response.")
                  except discord.errors.NotFound:
                     pass
                 
