@@ -354,7 +354,7 @@ async def session_cmd(ctx):
     msg = (f"**Session Info (Channel Context):**\n"
            f"- Model: `{info['model']}`\n"
            f"- Message Count: `{info['message_count']}`\n"
-           f"- Estimated Tokens: `{info.get('estimated_tokens', '?')}` / 8000\n"
+           f"- Estimated Tokens: `{info.get('estimated_tokens', '?')}` / {info.get('context_window', 32768)}\n"
            f"- Memory Compressions: `{info.get('compression_count', 0)}`\n"
            f"- Idle Time: `{idle_str}`")
     await ctx.send(msg)

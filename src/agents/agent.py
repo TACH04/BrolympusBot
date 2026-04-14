@@ -137,6 +137,7 @@ class GeneralAgent:
             "idle_seconds": int(idle_time),
             "estimated_tokens": self.get_total_tokens(),
             "compression_count": self.compression_count,
+            "context_window": OLLAMA_NUM_CTX,
         }
 
 
