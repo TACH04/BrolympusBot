@@ -1,5 +1,7 @@
 import os
 import logging
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from integrations.google_calendar import list_upcoming_events, create_event, delete_event, verify_date
 from integrations.web_search import search_web, scrape_url
 from agents.research_agent import ResearchAgent
@@ -57,13 +59,27 @@ def list_upcoming_events_tool(max_results=20):
             },
             "end_time": {
                 "type": "string",
-                "description": f"The end time of the event in ISO 8601 format (e.g. 2026-04-03T11:00:00). Assumes timezone: {SERVER_TIMEZONE}."
+                "description": f"The end time of the event in ISO 8601 format (e.g. 2026-04-03T11:00:00). Assumes timezone: {SERVER_TIMEZONE}. If omitted, defaults to 2 hours after start_time."
             }
         },
-        "required": ["summary", "start_time", "end_time"]
+        "required": ["summary", "start_time"]
     }
 )
-def create_event_tool(summary, start_time, end_time, description=""):
+def create_event_tool(summary, start_time, end_time=None, description=""):
+    if not end_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            if start_dt.tzinfo is not None:
+                # Normalize offset-aware timestamps to the configured calendar timezone
+                # and send naive local datetimes to avoid offset/timeZone conflicts.
+                start_dt = start_dt.astimezone(ZoneInfo(SERVER_TIMEZONE)).replace(tzinfo=None)
+                start_time = start_dt.isoformat(timespec='seconds')
+            end_time = (start_dt + timedelta(hours=2)).isoformat(timespec='seconds')
+        except (ValueError, TypeError):
+            return (
+                "Error: start_time must be a valid ISO 8601 datetime "
+                "(e.g. 2026-04-03T10:00:00) when end_time is omitted."
+            )
     return create_event(summary, description, start_time, end_time, timezone=SERVER_TIMEZONE)
 
 @registry.register(
