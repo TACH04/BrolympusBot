@@ -15,6 +15,7 @@ class ReminderManager:
         self.subscriptions = {}         # event_id -> dict of statuses -> list of user_ids
         self.sent_reminders = set()    # Set of event_ids
         self.dashboard_message_id = None # Single message ID for the announcement dashboard
+        self.last_dashboard_hash = None  # Hash of the last rendered dashboard state
         self.in_progress = set()       # Runtime lock for events being processed
         self._load()
 
@@ -30,6 +31,7 @@ class ReminderManager:
                     self.subscriptions = data.get('subscriptions', {})
                     self.sent_reminders = set(data.get('sent_reminders', []))
                     self.dashboard_message_id = data.get('dashboard_message_id')
+                    self.last_dashboard_hash = data.get('last_dashboard_hash')
                 logger.info(f"Loaded reminders state: {len(self.announced_events)} announced, {len(self.sent_reminders)} reminded.")
             except Exception as e:
                 logger.error(f"Failed to load reminders state: {e}")
@@ -42,7 +44,8 @@ class ReminderManager:
             'event_embed_hashes': self.event_embed_hashes,
             'subscriptions': self.subscriptions,
             'sent_reminders': list(self.sent_reminders),
-            'dashboard_message_id': self.dashboard_message_id
+            'dashboard_message_id': self.dashboard_message_id,
+            'last_dashboard_hash': self.last_dashboard_hash
         }
         os.makedirs(os.path.dirname(REMINDERS_FILE), exist_ok=True)
         try:

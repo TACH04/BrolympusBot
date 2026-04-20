@@ -6,6 +6,9 @@ import time
 import asyncio
 import logging
 import datetime
+import tempfile
+import re
+from collections import Counter
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 import aiohttp
@@ -14,6 +17,7 @@ from agents.agent import GeneralAgent
 from bot.text_chunking import DISCORD_MAX_MESSAGE_LENGTH, split_text
 from bot.reminder_manager import reminder_manager
 from integrations.google_calendar import get_upcoming_events_data
+from bot.image_generator import render_event_dashboard
 
 # Configure logging
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -340,27 +344,29 @@ sync_api_lock = asyncio.Lock()
 sync_registry_pending = False
 pending_dashboard_refreshes = {} # {channel_id: task}
 
-async def trigger_sync_registry():
+async def trigger_sync_registry(force: bool = False):
     global sync_registry_pending
     if sync_api_lock.locked():
         if not sync_registry_pending:
             sync_registry_pending = True
             logger.info("Sync already running, queuing pending sync.")
         return
-    asyncio.create_task(_run_sync_with_pending())
+    asyncio.create_task(_run_sync_with_pending(force=force))
 
-async def _run_sync_with_pending():
+async def _run_sync_with_pending(force: bool = False):
     global sync_registry_pending
-    await sync_registry()
+    await sync_registry(force=force)
     while sync_registry_pending:
         sync_registry_pending = False
         logger.info("Executing pending sync.")
-        await sync_registry()
+        await sync_registry(force=True) # If one was pending, it's likely a change
 
-async def sync_registry():
+async def sync_registry(force: bool = False):
     """
     Synchronizes the announcement channel dashboard and sends reminders.
     This should generally be called via trigger_sync_registry() to handle debouncing.
+    
+    :param force: If True, skips the hash check and re-posts the dashboard even if data is unchanged.
     """
     async with sync_api_lock:
         if not ANNOUNCEMENT_CHANNEL_ID:
@@ -428,11 +434,43 @@ async def sync_registry():
                             reminder_manager.set_in_progress(event_id, False)
                     else:
                         reminder_manager.mark_reminder_sent(event_id)
-                        
+        
+        # --- Dashboard Update Optimization ---
+        
+        # Calculate state hash to detect changes
+        state_str = json.dumps(dashboard_events, sort_keys=True)
+        current_hash = hashlib.md5(state_str.encode('utf-8')).hexdigest()
+        
+        has_changed = current_hash != reminder_manager.last_dashboard_hash
+        
+        # Check if the dashboard is still the last message in the channel
+        is_at_bottom = False
+        if reminder_manager.dashboard_message_id:
+            if announcement_channel.last_message_id == reminder_manager.dashboard_message_id:
+                is_at_bottom = True
+            else:
+                # Double check with history in case last_message_id is stale or includes non-content messages
+                try:
+                    last_msg = None
+                    async for msg in announcement_channel.history(limit=1):
+                        last_msg = msg
+                    if last_msg and last_msg.id == reminder_manager.dashboard_message_id:
+                        is_at_bottom = True
+                except Exception:
+                    pass
+
+        # Decide whether to refresh the image
+        if not force and not has_changed and is_at_bottom:
+            logger.debug("Skipping dashboard refresh: Data is same and message is at the bottom.")
+            return
+
+        logger.info(f"Refreshing dashboard (force={force}, changed={has_changed}, at_bottom={is_at_bottom})")
+
+        # Update hash
+        reminder_manager.last_dashboard_hash = current_hash
+        
         # Render image
-        import tempfile
         output_path = os.path.join(tempfile.gettempdir(), 'dashboard.png')
-        from bot.image_generator import render_event_dashboard
         render_event_dashboard(dashboard_events, output_path)
 
         # Message management: Try direct deletion of stored dashboard ID
@@ -578,7 +616,7 @@ async def on_message(message):
         async def debounced_sync():
             await asyncio.sleep(30)
             try:
-                await trigger_sync_registry()
+                await trigger_sync_registry(force=True)
             finally:
                 if pending_dashboard_refreshes.get(message.channel.id) == refresh_task:
                     del pending_dashboard_refreshes[message.channel.id]
@@ -721,10 +759,9 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                     logger.debug(f"Tool {event['tool']} returned: {event['result']}")
                     if event['tool'] in ['create_event', 'delete_event', 'rsvp_to_event']:
                         # Trigger an immediate registry sync via the debounced wrapper
-                        await trigger_sync_registry()
+                        await trigger_sync_registry(force=True)
                     
                     if event['tool'] == 'create_event':
-                        import re
                         # Look for the URL pattern in the create_event result
                         match = re.search(r'(https://www\.google\.com/calendar/event\?eid=[\w]+)', event['result'])
                         if match:
@@ -753,7 +790,6 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
             if full_text:
                 # Append tools used if any
                 if tools_used:
-                    from collections import Counter
                     # Count tools while preserving order of first appearance
                     counts = Counter(tools_used)
                     unique_tools = []
