@@ -171,7 +171,7 @@ def render_event_dashboard(events, output_path):
                     
                     text_x = bx + (bubble_diameter - iw) // 2
                     text_y = by + (bubble_diameter - ih) // 2 - 2 # Minor visual adjustment
-                    draw.text((text_x, text_y), initials, font=font_bubble, fill=item['color'])
+                    draw.text((text_x, text_y), initials, font=font_bubble, fill="#ffffff")
             
             y += layout['height']
             # Subtle row separator
