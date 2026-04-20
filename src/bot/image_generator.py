@@ -58,11 +58,11 @@ def render_event_dashboard(events, output_path):
             }
             
             if att_count > 0:
-                # Calculate initial position
-                start_x = cols[2]
+                # Fixed indentation for all initials rows
+                start_x = cols[2] + 120
                 current_x = start_x
                 current_row = []
-                row_y_offset = line_spacing # Start all initials on the next line
+                row_y_offset = 0
                 
                 for person in attendees_data:
                     initials = person.get('initials', '?')
@@ -73,7 +73,7 @@ def render_event_dashboard(events, output_path):
                         # Wrap to next line
                         layout['rows'].append(current_row)
                         current_row = []
-                        current_x = cols[2]
+                        current_x = start_x # Keep consistent indentation
                         row_y_offset += line_spacing
                         
                     current_row.append({
@@ -87,7 +87,7 @@ def render_event_dashboard(events, output_path):
                 if current_row:
                     layout['rows'].append(current_row)
                 
-                layout['height'] = max(base_row_height, row_y_offset + line_spacing + 5)
+                layout['height'] = max(base_row_height, row_y_offset + line_spacing + 10)
             
             event_layouts.append(layout)
             total_events_height += layout['height']
