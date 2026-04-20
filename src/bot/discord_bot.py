@@ -19,6 +19,50 @@ from bot.reminder_manager import reminder_manager
 from integrations.google_calendar import get_upcoming_events_data
 from bot.image_generator import render_event_dashboard
 
+def load_contacts():
+    contacts_file = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'contacts.json')
+    try:
+        with open(contacts_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading contacts: {e}")
+        return {}
+
+def save_contacts(contacts):
+    contacts_file = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'contacts.json')
+    try:
+        os.makedirs(os.path.dirname(contacts_file), exist_ok=True)
+        with open(contacts_file, 'w', encoding='utf-8') as f:
+            json.dump(contacts, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving contacts: {e}")
+        return False
+
+
+def get_initials(name):
+    parts = str(name).strip().split()
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+def generate_color(user_id):
+    hash_val = int(hashlib.md5(str(user_id).encode()).hexdigest(), 16)
+    r = (hash_val & 0xFF0000) >> 16
+    g = (hash_val & 0x00FF00) >> 8
+    b = hash_val & 0x0000FF
+    
+    # Mix with white to make pastels/brighter colors readable against dark bg
+    r = (r + 255) // 2
+    g = (g + 255) // 2
+    b = (b + 255) // 2
+    
+    return f"#{r:02x}{g:02x}{b:02x}"
+
 # Configure logging
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log_file = 'discord_bot.log'
@@ -87,6 +131,7 @@ REMINDERS_CHANNEL_ID = _parse_channel_id(os.getenv("REMINDERS_CHANNEL_ID"))
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 poll_lock = asyncio.Lock()
@@ -317,6 +362,48 @@ async def download_images(attachments) -> list[bytes]:
 
     return image_bytes_list
 
+@bot.command(name='sync_names')
+async def sync_names_cmd(ctx):
+    """Syncs server members to data/contacts.json."""
+    if not ctx.guild:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    # Load existing
+    contacts = load_contacts()
+    
+    # Add members
+    added_count = 0
+    updated_count = 0
+    
+    status_msg = await ctx.send("⏳ Syncing members... (this may take a moment for large servers)")
+    
+    try:
+        async for member in ctx.guild.fetch_members(limit=None):
+            if member.bot:
+                continue
+            
+            uid_str = str(member.id)
+            if uid_str not in contacts:
+                contacts[uid_str] = member.display_name
+                added_count += 1
+            else:
+                # Update display name if it's different and not already customized?
+                # For now just log new ones to avoid overwriting manual edits
+                pass
+        
+        if save_contacts(contacts):
+            await status_msg.edit(content=f"✅ Sync complete! Added {added_count} new members to `data/contacts.json`. Total: {len(contacts)}.")
+            logger.info(f"Sync complete: {added_count} members added to contacts.")
+        else:
+            await status_msg.edit(content="❌ Failed to save synced contacts.")
+            
+    except discord.Forbidden:
+        await status_msg.edit(content="❌ I don't have permission to fetch members. Please enable 'Server Members Intent' in the Developer Portal.")
+    except Exception as e:
+        logger.error(f"Error during sync: {e}")
+        await status_msg.edit(content=f"❌ An error occurred: {e}")
+
 @bot.event
 async def on_ready():
     if not session_manager.http_session:
@@ -397,17 +484,41 @@ async def sync_registry(force: bool = False):
                 start_dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d').replace(tzinfo=datetime.timezone.utc)
             
             subs = reminder_manager.get_all_subscribers(event['id'])
-            going_count = len(subs.get('going', []))
+            going_subscribers = subs.get('going', [])
+            going_count = len(going_subscribers)
             
             # format for dashboard
             date_str = start_dt.strftime('%b %d')
-            time_str = start_dt.strftime('%I:%M %p')
+            time_str = start_dt.strftime('%-I:%M %p')
             
+            attendees_data = []
+            contacts = load_contacts()
+            for uid in going_subscribers:
+                name = contacts.get(str(uid))
+                if name:
+                    logger.debug(f"RSVP from {name} ({uid})") # Silent for existing known
+                    initials = get_initials(name)
+                else:
+                    logger.info(f"RSVP from unknown ID (please add to data/contacts.json): {uid}")
+                    # Try to fetch from discord bot cache
+                    user = bot.get_user(int(uid))
+                    if user:
+                        name = user.display_name
+                        initials = get_initials(name)
+                    else:
+                        initials = "?"
+                
+                attendees_data.append({
+                    "id": str(uid),
+                    "initials": initials,
+                    "color": generate_color(uid)
+                })
+
             dashboard_events.append({
-                'date': date_str,
-                'time': time_str,
+                'schedule': f"{date_str} • {time_str}",
                 'title': summary,
-                'attendees': going_count
+                'attendees': going_count,
+                'attendees_data': attendees_data
             })
             
             # Reminder check
@@ -525,6 +636,7 @@ async def poll_calendar():
 async def help_cmd(ctx):
     """Displays this help message."""
     help_text = """**Brolympus Bot Commands:**
+`!sync_names` - Automatically populate data/contacts.json with server members.
 `!clear` - Reset my conversation context immediately.
 `!rebase <new prompt>` - Reset conversation context and completely replace my system prompt.
 `!stop` - Interrupt the current active task.

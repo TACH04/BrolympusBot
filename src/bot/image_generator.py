@@ -8,7 +8,7 @@ FONT_PATH = "/System/Library/Fonts/Supplemental/Arial.ttf"
 def render_event_dashboard(events, output_path):
     """
     Renders a high-fidelity image dashboard of upcoming events.
-    events: list of dicts with 'date', 'time', 'title', 'attendees' (int)
+    events: list of dicts with 'schedule', 'title', 'attendees' (int), 'attendees_data' (list)
     """
     width = 850
     row_height = 60
@@ -25,10 +25,12 @@ def render_event_dashboard(events, output_path):
         font_title = ImageFont.truetype(FONT_PATH, 36)
         font_header = ImageFont.truetype(FONT_PATH, 20)
         font_main = ImageFont.truetype(FONT_PATH, 24)
+        font_bubble = ImageFont.truetype(FONT_PATH, 16)
     except IOError:
         font_title = ImageFont.load_default(size=36) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
         font_header = ImageFont.load_default(size=20) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
         font_main = ImageFont.load_default(size=24) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
+        font_bubble = ImageFont.load_default(size=16) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
 
     # Draw Header Title
     draw.text((padding, padding), "🏔️ Brolympus Schedule", font=font_title, fill="#ffd700")  # Gold accent
@@ -38,8 +40,8 @@ def render_event_dashboard(events, output_path):
     draw.text((width - padding - 200, padding + 15), f"Updated: {now_str}", font=font_header, fill="#888888")
 
     # Column constraints
-    cols = [padding, padding + 150, padding + 320, width - 150]
-    col_names = ["DATE", "TIME", "EVENT", "ATTENDEES"]
+    cols = [padding, padding + 220, width - 340]
+    col_names = ["SCHEDULE", "EVENT", "GOING"]
     
     y = header_height
     for x, name in zip(cols, col_names):
@@ -55,21 +57,53 @@ def render_event_dashboard(events, output_path):
     else:
         for ev in events:
             # Draw fields
-            draw.text((cols[0], y), ev['date'], font=font_main, fill="#ffffff")
-            draw.text((cols[1], y), ev['time'], font=font_main, fill="#cccccc")
+            schedule_text = ev.get('schedule', f"{ev.get('date', '')} • {ev.get('time', '')}")
+            draw.text((cols[0], y), schedule_text, font=font_main, fill="#ffffff")
             
             # Truncate long titles
             title = ev['title']
             if len(title) > 23:
                 title = title[:20] + "..."
-            draw.text((cols[2], y), title, font=font_main, fill="#ffffff")
+            draw.text((cols[1], y), title, font=font_main, fill="#ffffff")
             
             # Attendee badge formatting
             att_count = ev['attendees']
             if att_count > 0:
-                draw.text((cols[3], y), f"✅ {att_count} Going", font=font_main, fill="#4CAF50")
+                base_text = f"✅ {att_count} Going"
+                draw.text((cols[2], y), base_text, font=font_main, fill="#4CAF50")
+                
+                # Draw initials bubbles to the right
+                bbox = draw.textbbox((0, 0), base_text, font=font_main)
+                text_w = bbox[2] - bbox[0]
+                
+                bubble_x = cols[2] + text_w + 15
+                bubble_radius = 16
+                bubble_y_center = y + 14
+                
+                attendees_data = ev.get('attendees_data', [])
+                max_bubbles = 5
+                
+                current_x = bubble_x
+                for i, person in enumerate(attendees_data[:max_bubbles]):
+                    initials = person.get('initials', '?')
+                    color = person.get('color', '#ffffff')
+                    
+                    # Draw initials as colored text
+                    draw.text((current_x, y), initials, font=font_main, fill=color)
+                    
+                    # Calculate width to advance current_x
+                    ibbox = draw.textbbox((0, 0), initials, font=font_main)
+                    iw = ibbox[2] - ibbox[0]
+                    current_x += iw + 12 # Space between tags
+                
+                # Draw +N if there are more
+                if att_count > max_bubbles:
+                    extra = att_count - max_bubbles
+                    plus_text = f"+{extra}"
+                    draw.text((current_x, y), plus_text, font=font_main, fill="#888888")
+                    
             else:
-                draw.text((cols[3], y), "- None -", font=font_main, fill="#888888")
+                draw.text((cols[2], y), "- None -", font=font_main, fill="#888888")
             
             y += row_height
             # Subtle row separator

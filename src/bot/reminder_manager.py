@@ -82,7 +82,8 @@ class ReminderManager:
         self.event_embed_hashes[event_id] = embed_hash
         self.save()
 
-    def add_subscription(self, event_id: str, user_id: int, status: str = "going"):
+    def add_subscription(self, event_id: str, user_id, status: str = "going"):
+        user_id = str(user_id)
         if event_id not in self.subscriptions:
             self.subscriptions[event_id] = {"going": [], "maybe": [], "declined": []}
         
@@ -94,13 +95,15 @@ class ReminderManager:
                 self.subscriptions[event_id][status].append(user_id)
                 self.save()
 
-    def remove_subscription(self, event_id: str, user_id: int, status: str = "going"):
+    def remove_subscription(self, event_id: str, user_id, status: str = "going"):
+        user_id = str(user_id)
         if event_id in self.subscriptions and status in self.subscriptions[event_id]:
             if user_id in self.subscriptions[event_id][status]:
                 self.subscriptions[event_id][status].remove(user_id)
                 self.save()
 
-    def remove_subscription_from_all(self, event_id: str, user_id: int):
+    def remove_subscription_from_all(self, event_id: str, user_id):
+        user_id = str(user_id)
         if event_id in self.subscriptions:
             changed = False
             for s in ["going", "maybe", "declined"]:

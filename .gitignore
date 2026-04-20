@@ -18,6 +18,7 @@ memory-plan.md
 
 # Persisted Discord session context
 data/sessions/
+data/*
 
 .bot.lock
 

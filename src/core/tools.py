@@ -149,8 +149,8 @@ def search_web_tool(query, max_results=5):
                 "description": "The ID of the event."
             },
             "user_id": {
-                "type": "integer",
-                "description": "The Discord numeric ID of the user RSVPing."
+                "type": "string",
+                "description": "The Discord numeric ID of the user RSVPing as a string."
             },
             "status": {
                 "type": "string",
@@ -176,9 +176,9 @@ def rsvp_to_event_tool(event_id, user_id, status):
                 "description": "The ID of the event."
             },
             "user_id": {
-                "type": "integer",
-                "description": "The Discord numeric ID of the user."
-            }
+                "type": "string",
+                "description": "The Discord numeric ID of the user as a string."
+            },
         },
         "required": ["event_id", "user_id"]
     }
