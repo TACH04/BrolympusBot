@@ -17,27 +17,87 @@ def render_event_dashboard(events, output_path):
     events: list of dicts with 'schedule', 'title', 'attendees' (int), 'attendees_data' (list)
     """
     width = 850
-    row_height = 60
+    base_row_height = 60
     header_height = 100
     padding = 30
+    line_spacing = 35
     
-    height = header_height + max(1, len(events)) * row_height + padding * 2
+    # Pre-load fonts for measurement
+    try:
+        font_title = ImageFont.truetype(FONT_PATH, 36)
+        font_header = ImageFont.truetype(FONT_PATH, 20)
+        font_main = ImageFont.truetype(FONT_PATH, 24)
+    except IOError:
+        font_title = ImageFont.load_default(size=36) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
+        font_header = ImageFont.load_default(size=20) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
+        font_main = ImageFont.load_default(size=24) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
+
+    # Column constraints
+    cols = [padding, padding + 220, width - 340]
+    
+    # Calculate heights and layouts for each event
+    # We use a dummy draw object for measurements
+    dummy_img = Image.new("RGB", (1, 1))
+    draw_measure = ImageDraw.Draw(dummy_img)
+    
+    event_layouts = []
+    total_events_height = 0
+    
+    if not events:
+        total_events_height = base_row_height + 20
+    else:
+        for ev in events:
+            att_count = ev.get('attendees', 0)
+            attendees_data = ev.get('attendees_data', [])
+            
+            layout = {
+                'event': ev,
+                'rows': [], # List of lists of {initials, color, x, y_offset}
+                'height': base_row_height,
+                'base_text': f"{att_count} Going" if att_count > 0 else "- None -"
+            }
+            
+            if att_count > 0:
+                # Calculate initial position
+                start_x = cols[2]
+                current_x = start_x
+                current_row = []
+                row_y_offset = line_spacing # Start all initials on the next line
+                
+                for person in attendees_data:
+                    initials = person.get('initials', '?')
+                    ibbox = draw_measure.textbbox((0, 0), initials, font=font_main)
+                    iw = ibbox[2] - ibbox[0]
+                    
+                    if current_x + iw > width - padding:
+                        # Wrap to next line
+                        layout['rows'].append(current_row)
+                        current_row = []
+                        current_x = cols[2]
+                        row_y_offset += line_spacing
+                        
+                    current_row.append({
+                        'initials': initials,
+                        'color': person.get('color', '#ffffff'),
+                        'x': current_x,
+                        'y_offset': row_y_offset
+                    })
+                    current_x += iw + 12
+                
+                if current_row:
+                    layout['rows'].append(current_row)
+                
+                layout['height'] = max(base_row_height, row_y_offset + line_spacing + 5)
+            
+            event_layouts.append(layout)
+            total_events_height += layout['height']
+
+    height = header_height + total_events_height + padding * 2
     
     # Dark mode charcoal background
     img = Image.new("RGB", (width, height), color="#1e1e24")
     draw = ImageDraw.Draw(img)
     
-    try:
-        font_title = ImageFont.truetype(FONT_PATH, 36)
-        font_header = ImageFont.truetype(FONT_PATH, 20)
-        font_main = ImageFont.truetype(FONT_PATH, 24)
-        font_bubble = ImageFont.truetype(FONT_PATH, 16)
-    except IOError:
-        font_title = ImageFont.load_default(size=36) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
-        font_header = ImageFont.load_default(size=20) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
-        font_main = ImageFont.load_default(size=24) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
-        font_bubble = ImageFont.load_default(size=16) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
-
     # Draw Header Title
     draw.text((padding, padding), "Brolympus Schedule", font=font_title, fill="#ffd700")  # Gold accent
     
@@ -45,10 +105,7 @@ def render_event_dashboard(events, output_path):
     now_str = datetime.datetime.now().strftime("%I:%M %p")
     draw.text((width - padding - 200, padding + 15), f"Updated: {now_str}", font=font_header, fill="#888888")
 
-    # Column constraints
-    cols = [padding, padding + 220, width - 340]
     col_names = ["SCHEDULE", "EVENT", "GOING"]
-    
     y = header_height
     for x, name in zip(cols, col_names):
         draw.text((x, y), name, font=font_header, fill="#aaaaaa")
@@ -61,7 +118,8 @@ def render_event_dashboard(events, output_path):
     if not events:
         draw.text((padding, y + 20), "No upcoming events scheduled.", font=font_main, fill="#ffffff")
     else:
-        for ev in events:
+        for layout in event_layouts:
+            ev = layout['event']
             # Draw fields
             schedule_text = ev.get('schedule', f"{ev.get('date', '')} {ev.get('time', '')}")
             draw.text((cols[0], y), schedule_text, font=font_main, fill="#ffffff")
@@ -72,48 +130,18 @@ def render_event_dashboard(events, output_path):
                 title = title[:20] + "..."
             draw.text((cols[1], y), title, font=font_main, fill="#ffffff")
             
-            # Attendee badge formatting
-            att_count = ev['attendees']
-            if att_count > 0:
-                base_text = f"{att_count} Going"
-                draw.text((cols[2], y), base_text, font=font_main, fill="#4CAF50")
-                
-                # Draw initials bubbles to the right
-                bbox = draw.textbbox((0, 0), base_text, font=font_main)
-                text_w = bbox[2] - bbox[0]
-                
-                bubble_x = cols[2] + text_w + 15
-                bubble_radius = 16
-                bubble_y_center = y + 14
-                
-                attendees_data = ev.get('attendees_data', [])
-                max_bubbles = 5
-                
-                current_x = bubble_x
-                for i, person in enumerate(attendees_data[:max_bubbles]):
-                    initials = person.get('initials', '?')
-                    color = person.get('color', '#ffffff')
-                    
-                    # Draw initials as colored text
-                    draw.text((current_x, y), initials, font=font_main, fill=color)
-                    
-                    # Calculate width to advance current_x
-                    ibbox = draw.textbbox((0, 0), initials, font=font_main)
-                    iw = ibbox[2] - ibbox[0]
-                    current_x += iw + 12 # Space between tags
-                
-                # Draw +N if there are more
-                if att_count > max_bubbles:
-                    extra = att_count - max_bubbles
-                    plus_text = f"+{extra}"
-                    draw.text((current_x, y), plus_text, font=font_main, fill="#888888")
-                    
-            else:
-                draw.text((cols[2], y), "- None -", font=font_main, fill="#888888")
+            # Attendee base text (e.g. "X Going")
+            att_color = "#4CAF50" if ev['attendees'] > 0 else "#888888"
+            draw.text((cols[2], y), layout['base_text'], font=font_main, fill=att_color)
             
-            y += row_height
+            # Draw all wrapped initials
+            for row in layout['rows']:
+                for item in row:
+                    draw.text((item['x'], y + item['y_offset']), item['initials'], font=font_main, fill=item['color'])
+            
+            y += layout['height']
             # Subtle row separator
-            draw.line([(padding, y - 10), (width - padding, y - 10)], fill="#333333", width=1)
+            draw.line([(padding, y - 5), (width - padding, y - 5)], fill="#333333", width=1)
             
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     img.save(output_path)
