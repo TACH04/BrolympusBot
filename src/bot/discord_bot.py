@@ -427,6 +427,46 @@ async def on_ready():
             poll_calendar.start()
 
 # Registry sync management
+async def _resolve_and_repair_uid(uid_str, contacts, announcement_channel, event_id, status_group):
+    uid_str = str(uid_str)
+    
+    # 1. Exact match in contacts
+    if uid_str in contacts:
+        return uid_str, contacts[uid_str]
+        
+    # 2. Precision repair
+    try:
+        uid_float = float(uid_str)
+        for contact_id, name in contacts.items():
+            if int(float(contact_id)) == int(uid_float):
+                logger.warning(f"Precision repair: replacing rounded ID {uid_str} with {contact_id}")
+                reminder_manager.remove_subscription(event_id, uid_str, status_group)
+                reminder_manager.add_subscription(event_id, contact_id, status_group)
+                return contact_id, name
+    except Exception as e:
+        logger.error(f"Error during precision repair check: {e}")
+
+    # 3. Cache fallback
+    uid_int = int(uid_str)
+    if announcement_channel and announcement_channel.guild:
+        member = announcement_channel.guild.get_member(uid_int)
+        if member:
+            return uid_str, member.display_name
+            
+    user = bot.get_user(uid_int)
+    if user:
+        return uid_str, user.display_name
+        
+    # 4. API fallback
+    try:
+        user = await bot.fetch_user(uid_int)
+        if user:
+            return uid_str, user.display_name
+    except Exception as e:
+        logger.warning(f"Failed to fetch user {uid_str} from API: {e}")
+        
+    return uid_str, None
+
 sync_api_lock = asyncio.Lock()
 sync_registry_pending = False
 pending_dashboard_refreshes = {} # {channel_id: task}
@@ -493,25 +533,20 @@ async def sync_registry(force: bool = False):
             
             attendees_data = []
             contacts = load_contacts()
-            for uid in going_subscribers:
-                name = contacts.get(str(uid))
+            for uid in list(going_subscribers):
+                final_uid, name = await _resolve_and_repair_uid(uid, contacts, announcement_channel, event['id'], "going")
+                
                 if name:
-                    logger.debug(f"RSVP from {name} ({uid})") # Silent for existing known
+                    # Silent for existing known
                     initials = get_initials(name)
                 else:
-                    logger.info(f"RSVP from unknown ID (please add to data/contacts.json): {uid}")
-                    # Try to fetch from discord bot cache
-                    user = bot.get_user(int(uid))
-                    if user:
-                        name = user.display_name
-                        initials = get_initials(name)
-                    else:
-                        initials = "?"
+                    logger.info(f"RSVP from unknown ID (please add to data/contacts.json): {final_uid}")
+                    initials = "?"
                 
                 attendees_data.append({
-                    "id": str(uid),
+                    "id": str(final_uid),
                     "initials": initials,
-                    "color": generate_color(uid)
+                    "color": generate_color(final_uid)
                 })
 
             dashboard_events.append({
