@@ -427,8 +427,14 @@ async def on_ready():
             poll_calendar.start()
 
 # Registry sync management
-async def _resolve_and_repair_uid(uid_str, contacts, announcement_channel, event_id, status_group):
-    uid_str = str(uid_str)
+async def _resolve_and_repair_uid(raw_input, contacts, announcement_channel, event_id, status_group):
+    # Use regex to extract the numeric ID from any format (raw ID or mention)
+    match = re.search(r'(\d{17,20})', str(raw_input))
+    if not match:
+        logger.warning(f"Could not extract numeric ID from: {raw_input}")
+        return str(raw_input), None
+        
+    uid_str = match.group(1)
     
     # 1. Exact match in contacts
     if uid_str in contacts:
@@ -439,31 +445,35 @@ async def _resolve_and_repair_uid(uid_str, contacts, announcement_channel, event
         uid_float = float(uid_str)
         for contact_id, name in contacts.items():
             if int(float(contact_id)) == int(uid_float):
-                logger.warning(f"Precision repair: replacing rounded ID {uid_str} with {contact_id}")
-                reminder_manager.remove_subscription(event_id, uid_str, status_group)
+                logger.warning(f"Precision repair: replacing malformed ID {raw_input} with {contact_id}")
+                reminder_manager.remove_subscription(event_id, raw_input, status_group)
                 reminder_manager.add_subscription(event_id, contact_id, status_group)
                 return contact_id, name
     except Exception as e:
-        logger.error(f"Error during precision repair check: {e}")
+        logger.error(f"Error during precision repair check for {uid_str}: {e}")
 
     # 3. Cache fallback
-    uid_int = int(uid_str)
-    if announcement_channel and announcement_channel.guild:
-        member = announcement_channel.guild.get_member(uid_int)
-        if member:
-            return uid_str, member.display_name
-            
-    user = bot.get_user(uid_int)
-    if user:
-        return uid_str, user.display_name
-        
-    # 4. API fallback
     try:
-        user = await bot.fetch_user(uid_int)
+        uid_int = int(uid_str)
+        if announcement_channel and announcement_channel.guild:
+            member = announcement_channel.guild.get_member(uid_int)
+            if member:
+                return uid_str, member.display_name
+                
+        user = bot.get_user(uid_int)
         if user:
             return uid_str, user.display_name
+            
+        # 4. API fallback
+        try:
+            user = await bot.fetch_user(uid_int)
+            if user:
+                return uid_str, user.display_name
+        except Exception as e:
+            logger.warning(f"Failed to fetch user {uid_str} from API: {e}")
+            
     except Exception as e:
-        logger.warning(f"Failed to fetch user {uid_str} from API: {e}")
+        logger.error(f"Error in fallback lookup for {uid_str}: {e}")
         
     return uid_str, None
 
@@ -550,7 +560,7 @@ async def sync_registry(force: bool = False):
                 })
 
             dashboard_events.append({
-                'schedule': f"{date_str} • {time_str}",
+                'schedule': f"{date_str}  {time_str}",
                 'title': summary,
                 'attendees': going_count,
                 'attendees_data': attendees_data

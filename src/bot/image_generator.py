@@ -3,7 +3,13 @@ from PIL import Image, ImageDraw, ImageFont
 import datetime
 
 # Fallback to default if Arial is not found (which it should be on macOS)
-FONT_PATH = "/System/Library/Fonts/Supplemental/Arial.ttf"
+# Prefer Avenir for a premium look, fallback to Helvetica or Arial
+FONT_PATH = next((p for p in [
+    "/System/Library/Fonts/Avenir.ttc",
+    "/System/Library/Fonts/Helvetica.ttc", 
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf"
+] if os.path.exists(p)), "/System/Library/Fonts/Supplemental/Arial.ttf")
 
 def render_event_dashboard(events, output_path):
     """
@@ -33,7 +39,7 @@ def render_event_dashboard(events, output_path):
         font_bubble = ImageFont.load_default(size=16) if hasattr(ImageFont, 'load_default') else ImageFont.load_default()
 
     # Draw Header Title
-    draw.text((padding, padding), "🏔️ Brolympus Schedule", font=font_title, fill="#ffd700")  # Gold accent
+    draw.text((padding, padding), "Brolympus Schedule", font=font_title, fill="#ffd700")  # Gold accent
     
     # Last updated timestamp
     now_str = datetime.datetime.now().strftime("%I:%M %p")
@@ -57,7 +63,7 @@ def render_event_dashboard(events, output_path):
     else:
         for ev in events:
             # Draw fields
-            schedule_text = ev.get('schedule', f"{ev.get('date', '')} • {ev.get('time', '')}")
+            schedule_text = ev.get('schedule', f"{ev.get('date', '')} {ev.get('time', '')}")
             draw.text((cols[0], y), schedule_text, font=font_main, fill="#ffffff")
             
             # Truncate long titles
@@ -69,7 +75,7 @@ def render_event_dashboard(events, output_path):
             # Attendee badge formatting
             att_count = ev['attendees']
             if att_count > 0:
-                base_text = f"✅ {att_count} Going"
+                base_text = f"{att_count} Going"
                 draw.text((cols[2], y), base_text, font=font_main, fill="#4CAF50")
                 
                 # Draw initials bubbles to the right
