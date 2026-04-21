@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
-from agents.agent import GeneralAgent
+from agents.main_harness import GeneralAgent
 import json
 import logging
 from logging.handlers import RotatingFileHandler

@@ -8,7 +8,7 @@ import inspect
 from dotenv import load_dotenv
 import ollama
 
-logger = logging.getLogger('agents.agent')
+logger = logging.getLogger('agents.main_harness')
 
 from core.tools import OLLAMA_TOOLS, execute_tool
 from core.memory_manager import MemoryManager, estimate_tokens

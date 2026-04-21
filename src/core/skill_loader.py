@@ -1,6 +1,6 @@
 """
 skill_loader.py - Standalone utilities for discovering and loading Skills.
-Kept separate to avoid circular imports between agent.py and tools.py.
+Kept separate to avoid circular imports between main_harness.py and tools.py.
 """
 import os
 import re

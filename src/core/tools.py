@@ -234,7 +234,7 @@ if ENABLE_WEB_SCRAPING:
 # --- Compatibility Layer ---
 
 
-# Export OLLAMA_TOOLS for agent.py
+# Export OLLAMA_TOOLS for main_harness.py
 OLLAMA_TOOLS = registry.get_ollama_tools()
 
 def execute_tool(name, arguments, debug_callback=None):

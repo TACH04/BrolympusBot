@@ -13,11 +13,11 @@ from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 import aiohttp
 import hashlib
-from agents.agent import GeneralAgent
+from agents.main_harness import GeneralAgent
 from bot.text_chunking import DISCORD_MAX_MESSAGE_LENGTH, split_text
 from bot.reminder_manager import reminder_manager
 from integrations.google_calendar import get_upcoming_events_data
-from bot.image_generator import render_event_dashboard
+from bot.brolympus_schedule_renderer import render_event_dashboard
 
 def load_contacts():
     contacts_file = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'contacts.json')
