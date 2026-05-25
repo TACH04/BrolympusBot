@@ -1,0 +1,98 @@
+================================================================================
+                    Brolympus Screen Capture Agent - Setup Guide
+================================================================================
+
+This guide explains how to set up the Brolympus Screen Capture Agent on a Windows PC
+so the Discord bot can watch your screen when you ask it to!
+
+The agent runs quietly in your system tray, uses zero CPU/bandwidth when the bot
+is not actively watching, and can be paused or closed at any time.
+
+--------------------------------------------------------------------------------
+STEP 1: CONNECT TO THE JETSON (TAILSCALE)
+--------------------------------------------------------------------------------
+The Discord bot runs on a Jetson Orin connected to a private Tailscale network.
+To securely connect to it without opening any router ports:
+
+1. Download and install Tailscale for Windows:
+   https://tailscale.com/download
+
+2. Launch Tailscale and log in (you can create a free account).
+
+3. The owner of the bot will send you a "Node Share Link" via Discord or email.
+   Open that link and click "Accept" to connect to their Jetson node.
+
+4. Ask the owner for the Jetson's Tailscale IP address (e.g., 100.115.x.y).
+   Write it down; you will need it in Step 3!
+
+--------------------------------------------------------------------------------
+STEP 2: RUN THE AGENT
+--------------------------------------------------------------------------------
+You can run the agent either as a pre-compiled .exe file or from python:
+
+Option A: Run the Pre-compiled Executable (Recommended)
+1. Double-click "BrolympusAgent.exe".
+2. Look at your Windows System Tray (the icons near your clock in the bottom-right).
+   - Tip: If you don't see it, click the small "^" arrow to reveal hidden icons.
+   - You should see a GREEN circle icon. This means the agent is active and idle.
+
+Option B: Run from Source (For Developers/Tinkerers)
+1. Make sure Python 3.8+ is installed on your PC.
+2. Open a Command Prompt in the client folder and run:
+   pip install -r requirements.txt
+3. Start the agent:
+   python agent.py
+
+--------------------------------------------------------------------------------
+STEP 3: CONFIGURE THE AGENT
+--------------------------------------------------------------------------------
+1. Locate the GREEN circle icon in your System Tray.
+2. Right-click the icon and select "Set Server URL...".
+3. Enter the Jetson's Tailscale IP address using this format:
+   http://<JETSON_TAILSCALE_IP>:5002
+   (Replace <JETSON_TAILSCALE_IP> with the IP you got in Step 1, e.g., http://100.115.2.3:5002)
+4. Click OK.
+
+--------------------------------------------------------------------------------
+STEP 4: LINK TO YOUR DISCORD ACCOUNT
+--------------------------------------------------------------------------------
+To let the bot know which screen belongs to your Discord user:
+
+1. Go to your Discord server where the bot is running.
+2. In any text channel, type:
+   !register_watch
+3. The bot will send you a Direct Message (DM) containing a 6-digit PIN.
+4. Right-click the GREEN circle icon in your System Tray and select "Register Device...".
+5. Paste or type the 6-digit PIN and click OK.
+6. A success dialog should pop up displaying your Discord username!
+
+--------------------------------------------------------------------------------
+HOW TO USE IT / STATUS INDICATORS
+--------------------------------------------------------------------------------
+The system tray icon tells you exactly what the agent is doing:
+
+- GREEN Circle (Idle):
+  The agent is running but NOT capturing or sending anything. It consumes 
+  essentially zero CPU and network bandwidth.
+  
+- RED Circle (Watching...):
+  The bot is actively watching your screen! A desktop notification will also 
+  pop up when this starts and stops.
+  - While watching, the agent grabs a screenshot of your main monitor every 3
+    seconds, compresses it, and sends it to the Jetson.
+    
+- GRAY Circle (Paused):
+  You have temporarily paused monitoring.
+  - Right-click the tray icon and select "Pause Monitoring". The agent will not 
+    capture or send anything, even if someone runs the watch command in Discord.
+  - Right-click and select "Resume" to unpause.
+
+- TO START WATCHING IN DISCORD:
+  Join any voice channel and type:
+  !watch @YourUsername <game>   (e.g., !watch @Tanner overwatch)
+  The bot will join your channel and begin commenting on your gameplay.
+
+- TO STOP WATCHING:
+  In Discord, type:
+  !unwatch
+  The bot will leave the channel and your agent will return to the GREEN (idle) state.
