@@ -8,6 +8,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 class TTSProvider(ABC):
+    @property
+    @abstractmethod
+    def sample_rate(self) -> int:
+        """Returns the native sample rate of this TTS provider's audio output."""
+        pass
+
     @abstractmethod
     async def synthesize(self, text: str) -> Path:
         """
@@ -18,6 +24,10 @@ class TTSProvider(ABC):
         pass
 
 class PiperProvider(TTSProvider):
+    @property
+    def sample_rate(self) -> int:
+        return 22050
+
     def __init__(self):
         # Default to the binary downloaded by the setup script
         self.piper_bin = os.path.join(os.getcwd(), 'bin', 'piper', 'piper')
@@ -76,6 +86,10 @@ class PiperProvider(TTSProvider):
             raise
 
 class KokoroProvider(TTSProvider):
+    @property
+    def sample_rate(self) -> int:
+        return 24000
+
     def __init__(self):
         self.voice = os.getenv("KOKORO_VOICE", "af_heart")
         self.speed = float(os.getenv("KOKORO_SPEED", "1.0"))

@@ -189,22 +189,27 @@ class WatchCog(commands.Cog):
                     except Exception:
                         pass
 
-    def _get_ffmpeg_filter(self) -> str:
+    def _get_ffmpeg_filter(self, base_rate: int) -> str:
         preset = os.getenv("WATCH_VOICE_FILTER", "announcer").lower()
         presets = {
-            "announcer": "aecho=0.6:0.7:40:0.25,asetrate=44100*1.15,atempo=0.87",
-            "chipmunk": "asetrate=44100*1.4,atempo=0.71",
-            "movie_trailer": "asetrate=44100*0.75,atempo=1.33,aecho=0.8:0.9:100:0.4",
+            "announcer": f"aecho=0.6:0.7:40:0.25,asetrate={base_rate}*1.15,atempo=0.87",
+            "chipmunk": f"asetrate={base_rate}*1.4,atempo=0.71",
+            "movie_trailer": f"asetrate={base_rate}*0.75,atempo=1.33,aecho=0.8:0.9:100:0.4",
             "robot": "afftfilt=real='hypot(re\,im)*sin(0)':imag='hypot(re\,im)*cos(0)',aecho=0.6:0.6:10:0.3"
         }
-        return presets.get(preset, preset)
+        filter_str = presets.get(preset, preset)
+        # Ensure we always resample to Discord's native 48000 Hz at the end of the filter chain
+        if filter_str and not filter_str.endswith("aresample=48000"):
+            filter_str += ",aresample=48000"
+        return filter_str
 
     def _play_audio(self, voice_client: discord.VoiceClient, wav_path: Path):
         if voice_client.is_playing():
             voice_client.stop()
             
+        base_rate = getattr(self.tts_provider, 'sample_rate', 22050)
         options = ""
-        ff_filter = self._get_ffmpeg_filter()
+        ff_filter = self._get_ffmpeg_filter(base_rate)
         if ff_filter:
             options = f'-af "{ff_filter}"'
             
