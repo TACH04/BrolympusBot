@@ -1,6 +1,6 @@
-# CalGuy: AI Calendar Assistant
+# Brolympus Bot
 
-CalGuy is a locally-powered AI calendar management assistant that leverages **Ollama** and the **Google Calendar API**. It offers a web interface and a CLI to manage your schedule with natural language.
+Brolympus Bot is a locally-powered AI calendar management assistant that leverages **Ollama** and the **Google Calendar API**. It offers a web interface and a CLI to manage your schedule with natural language.
 
 ## 🚀 Features
 

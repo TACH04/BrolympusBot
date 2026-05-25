@@ -162,6 +162,21 @@ def search_web_tool(query, max_results=5):
     }
 )
 def rsvp_to_event_tool(event_id, user_id, status):
+    # Normalize event_id (Google sometimes provides a long base64 'eid' which includes the calendar ID)
+    if len(event_id) > 60 and ' ' not in event_id:
+        try:
+            import base64
+            decoded = base64.b64decode(event_id).decode('utf-8')
+            if ' ' in decoded:
+                # The format is typically "event_id calendar_id"
+                event_id = decoded.split(' ')[0]
+                logger.info(f"Normalized long event_id to: {event_id}")
+        except Exception as e:
+            logger.debug(f"Event ID normalization skipped: {e}")
+
+    # Ensure user_id is a string to prevent numeric precision loss (rounding)
+    user_id = str(user_id)
+    
     reminder_manager.add_subscription(event_id, user_id, status)
     return f"Successfully RSVP'd user {user_id} as {status} for event {event_id}."
 
@@ -184,6 +199,19 @@ def rsvp_to_event_tool(event_id, user_id, status):
     }
 )
 def check_rsvp_status_tool(event_id, user_id):
+    # Normalize event_id
+    if len(event_id) > 60 and ' ' not in event_id:
+        try:
+            import base64
+            decoded = base64.b64decode(event_id).decode('utf-8')
+            if ' ' in decoded:
+                event_id = decoded.split(' ')[0]
+        except Exception:
+            pass
+
+    # Ensure user_id is a string
+    user_id = str(user_id)
+    
     subs = reminder_manager.get_all_subscribers(event_id)
     if user_id in subs.get('going', []):
         return "going"

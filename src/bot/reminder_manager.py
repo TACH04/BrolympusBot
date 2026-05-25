@@ -32,9 +32,47 @@ class ReminderManager:
                     self.sent_reminders = set(data.get('sent_reminders', []))
                     self.dashboard_message_id = data.get('dashboard_message_id')
                     self.last_dashboard_hash = data.get('last_dashboard_hash')
+                
+                # Perform migration of old long-format IDs
+                self.migrate_subscriptions()
+                
                 logger.info(f"Loaded reminders state: {len(self.announced_events)} announced, {len(self.sent_reminders)} reminded.")
             except Exception as e:
                 logger.error(f"Failed to load reminders state: {e}")
+
+    def migrate_subscriptions(self):
+        """
+        Migrates any subscriptions stored under long base64-encoded event IDs 
+        to their short ID counterparts.
+        """
+        import base64
+        migrated = False
+        to_process = list(self.subscriptions.keys())
+        
+        for eid in to_process:
+            if len(eid) > 60 and ' ' not in eid:
+                try:
+                    decoded = base64.b64decode(eid).decode('utf-8')
+                    if ' ' in decoded:
+                        short_id = decoded.split(' ')[0]
+                        logger.info(f"Migrating long ID {eid} to short ID {short_id}")
+                        
+                        # Merge subscriptions
+                        old_subs = self.subscriptions.pop(eid)
+                        if short_id not in self.subscriptions:
+                            self.subscriptions[short_id] = {"going": [], "maybe": [], "declined": []}
+                        
+                        for status in ["going", "maybe", "declined"]:
+                            for uid in old_subs.get(status, []):
+                                if uid not in self.subscriptions[short_id][status]:
+                                    self.subscriptions[short_id][status].append(uid)
+                        
+                        migrated = True
+                except Exception as e:
+                    logger.debug(f"Migration failed for {eid}: {e}")
+        
+        if migrated:
+            self.save()
 
     def save(self):
         """Save state to data/reminders.json."""
