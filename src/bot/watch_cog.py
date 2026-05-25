@@ -154,6 +154,14 @@ class WatchCog(commands.Cog):
         """Processes the frame, generates commentary, and speaks it. Safely isolated."""
         wav_path = None
         try:
+            # Save the frame to a debug file on the Jetson to verify capture is working
+            debug_dir = os.path.join(os.getcwd(), 'data')
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_path = os.path.join(debug_dir, 'last_received_frame.jpg')
+            with open(debug_path, 'wb') as f:
+                f.write(image_bytes)
+            logger.info(f"Saved incoming frame to {debug_path} ({len(image_bytes)} bytes)")
+
             # 1. VLM Inference
             text = await describe_frame(image_bytes, game_hint)
             if not text:
