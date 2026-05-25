@@ -15,8 +15,9 @@ from tkinter import simpledialog, messagebox
 from plyer import notification
 
 CONFIG_FILE = "config.json"
+DEFAULT_SERVER_URL = "http://127.0.0.1:5002"
 DEFAULT_CONFIG = {
-    "server_url": "http://127.0.0.1:5002",
+    "server_url": DEFAULT_SERVER_URL,
     "device_id": str(uuid.uuid4())
 }
 
@@ -36,7 +37,12 @@ class Agent:
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r') as f:
-                    return json.load(f)
+                    cfg = json.load(f)
+                    # If config has default localhost URL but executable has a custom baked IP, migrate it
+                    if cfg.get("server_url") == "http://127.0.0.1:5002" and DEFAULT_SERVER_URL != "http://127.0.0.1:5002":
+                        cfg["server_url"] = DEFAULT_SERVER_URL
+                        self.save_config(cfg)
+                    return cfg
             except:
                 pass
         self.save_config(DEFAULT_CONFIG)
@@ -152,6 +158,22 @@ class Agent:
     def on_register(self, icon, item):
         root = tk.Tk()
         root.withdraw()
+        root.attributes("-topmost", True)
+        root.focus_force()
+
+        # Check if they are still on default localhost
+        if "127.0.0.1" in self.config["server_url"] or "localhost" in self.config["server_url"]:
+            msg = (
+                "Your Server URL is currently set to the default localhost (127.0.0.1).\n\n"
+                "If the bot is running on your Jetson Orin (via Tailscale), you must configure "
+                "the Jetson's Tailscale IP instead.\n\n"
+                "Would you like to set the server URL now?"
+            )
+            if messagebox.askyesno("Setup Server URL", msg, parent=root):
+                root.destroy()
+                self.on_set_url(icon, item)
+                return
+
         pin = simpledialog.askstring("Register", "Enter the 6-digit PIN from Discord:", parent=root)
         if pin:
             try:
@@ -159,17 +181,19 @@ class Agent:
                 resp = requests.post(url, json={"pin": pin, "device_id": self.config['device_id']}, timeout=5)
                 if resp.status_code == 200:
                     data = resp.json()
-                    messagebox.showinfo("Success", f"Linked to Discord User: {data.get('discord_username')}")
+                    messagebox.showinfo("Success", f"Linked to Discord User: {data.get('discord_username')}", parent=root)
                 else:
                     data = resp.json()
-                    messagebox.showerror("Error", data.get("message", "Registration failed"))
+                    messagebox.showerror("Error", data.get("message", "Registration failed"), parent=root)
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to connect: {e}")
+                messagebox.showerror("Error", f"Failed to connect: {e}", parent=root)
         root.destroy()
 
     def on_set_url(self, icon, item):
         root = tk.Tk()
         root.withdraw()
+        root.attributes("-topmost", True)
+        root.focus_force()
         new_url = simpledialog.askstring("Server URL", "Enter Jetson Tailscale URL:", initialvalue=self.config["server_url"], parent=root)
         if new_url:
             self.config["server_url"] = new_url
@@ -188,9 +212,9 @@ class Agent:
         menu = pystray.Menu(
             item('Status: Online', lambda: None, enabled=False),
             pystray.Menu.SEPARATOR,
-            item('Register Device...', self.on_register),
+            item('Register Device...', self.on_register, default=True),
             item('Set Server URL...', self.on_set_url),
-            item(lambda text: 'Resume' if self.is_paused else 'Pause Monitoring', self.on_toggle_pause),
+            item(lambda _: 'Resume' if self.is_paused else 'Pause Monitoring', self.on_toggle_pause),
             pystray.Menu.SEPARATOR,
             item('Exit', self.on_exit)
         )

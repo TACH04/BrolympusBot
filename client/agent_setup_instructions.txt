@@ -12,14 +12,14 @@ is not actively watching, and can be paused or closed at any time.
 STEP 1: CONNECT TO THE JETSON (TAILSCALE)
 --------------------------------------------------------------------------------
 The Discord bot runs on a Jetson Orin connected to a private Tailscale network.
-To securely connect to it without opening any router ports:
+To securely connect to it:
 
 1. Download and install Tailscale for Windows:
    https://tailscale.com/download
 
 2. Launch Tailscale and log in (you can create a free account).
 
-3. The owner of the bot will send you a "Node Share Link" via Discord or email.
+3. The owner of the bot will send you a "Node Share Link".
    Open that link and click "Accept" to connect to their Jetson node.
 
 4. Ask the owner for the Jetson's Tailscale IP address (e.g., 100.115.x.y).
@@ -28,20 +28,23 @@ To securely connect to it without opening any router ports:
 --------------------------------------------------------------------------------
 STEP 2: RUN THE AGENT
 --------------------------------------------------------------------------------
-You can run the agent either as a pre-compiled .exe file or from python:
+Choose ONE of the two options below depending on what files you received:
 
-Option A: Run the Pre-compiled Executable (Recommended)
-1. Double-click "BrolympusAgent.exe".
-2. Look at your Windows System Tray (the icons near your clock in the bottom-right).
+Option A: Run the Pre-compiled Executable (Recommended - No Python Required!)
+1. If the bot owner sent you "BrolympusAgent.exe" directly, simply save it to your PC.
+2. Double-click "BrolympusAgent.exe".
+3. Look at your Windows System Tray (the icons near your clock in the bottom-right).
    - Tip: If you don't see it, click the small "^" arrow to reveal hidden icons.
    - You should see a GREEN circle icon. This means the agent is active and idle.
 
-Option B: Run from Source (For Developers/Tinkerers)
-1. Make sure Python 3.8+ is installed on your PC.
-2. Open a Command Prompt in the client folder and run:
-   pip install -r requirements.txt
-3. Start the agent:
-   python agent.py
+Option B: Run from Source / Build it Yourself
+1. Install Python 3.8+ from https://www.python.org/downloads/
+   - IMPORTANT: Make sure to check the box "Add Python to PATH" during installation!
+2. Put "agent.py" and "build_agent.bat" in the same folder.
+3. To compile it into an executable yourself, double-click "build_agent.bat".
+   - This script will automatically check for Python, install all required packages,
+     and build the executable inside the newly created "dist" folder.
+4. Double-click the resulting "dist/BrolympusAgent.exe".
 
 --------------------------------------------------------------------------------
 STEP 3: CONFIGURE THE AGENT

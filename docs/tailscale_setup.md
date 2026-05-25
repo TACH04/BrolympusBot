@@ -21,12 +21,18 @@ If you haven't already installed Tailscale on your Jetson:
    ```
    Click the URL displayed in the terminal to log in and add the Jetson to your personal Tailscale network (your "tailnet").
 
-3. **Get the Jetson's Tailscale IP**:
-   Retrieve the Jetson's internal Tailscale IP (IPv4):
-   ```bash
-   tailscale ip -4
-   ```
-   *This IP (starting with `100.x.y.z`) is what you will provide to your friends as the base URL (e.g., `http://100.x.y.z:5002`).*
+3. **Get the Jetson's Address (IP vs. FQDN)**:
+   * **IPv4 Address**: You can get your Jetson's internal Tailscale IP by running:
+     ```bash
+     tailscale ip -4
+     ```
+     *Note: Tailscale assigns IP addresses dynamically per-tailnet. When you share a node, Tailscale might map it to a different IP address in your friend's tailnet to prevent network collisions.*
+   * **MagicDNS FQDN (Recommended)**: For a seamless setup, you should use the Jetson's Fully Qualified Domain Name (FQDN), which remains **identical for all friends**. You can find it on your machines list in the Tailscale Admin Console or by running:
+     ```bash
+     tailscale status
+     ```
+     It will look like `ubuntu.xxxx.ts.net` or `ubuntu.tailxxxx.ts.net`.
+     *Baking this FQDN into the build script (e.g., `http://ubuntu.tailxxxx.ts.net:5002`) guarantees it resolves correctly for every guest out-of-the-box, regardless of the guest-specific IP Tailscale assigns them under the hood!*
 
 ---
 
