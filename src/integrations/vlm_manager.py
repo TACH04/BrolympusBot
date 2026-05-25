@@ -1,5 +1,6 @@
 import os
 import base64
+import re
 import logging
 import ollama
 
@@ -50,11 +51,15 @@ async def describe_frame(image_bytes: bytes, game_hint: str = "") -> str:
             model=model,
             messages=messages,
             options={
-                "num_predict": 150, # Sufficient headroom if model has thinking phase
+                "num_predict": 1024, # Large budget to accommodate thinking process
                 "temperature": 0.8,
             }
         )
         content = response['message']['content'].strip()
+        # Strip reasoning/thinking tags (e.g. <think>...</think>)
+        content = re.sub(r'<think>.*?(?:</think>|$)', '', content, flags=re.DOTALL)
+        content = re.sub(r'<thought>.*?(?:</thought>|$)', '', content, flags=re.DOTALL)
+        content = content.strip()
         logger.info(f"VLM Output: {content}")
         return content
     except Exception as e:
