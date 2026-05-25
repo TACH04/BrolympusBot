@@ -748,6 +748,7 @@ async def help_cmd(ctx):
 `!stop` - Interrupt the current active task.
 `!session` - Display current session details (model, message count, idle time).
 `!register_watch` - Generate a 6-digit PIN to link your desktop screen capture agent.
+`!personality [name]` - Change or display the active watch commentator personality.
 `!watch [game]` - Join your voice channel and provide live commentary on your stream.
 `!unwatch` - Stop live commentary and leave the voice channel.
 `!help` - Display this message.

@@ -33,6 +33,9 @@ class WatchCog(commands.Cog):
         
         self.registry = self._load_registry()
         
+        self.personality = "announcer"
+        self.commentary_history = []
+        
         self.app = web.Application()
         self.app.router.add_post('/agent/register', self.handle_register)
         self.app.router.add_get('/agent/status', self.handle_status)
@@ -162,10 +165,15 @@ class WatchCog(commands.Cog):
                 f.write(image_bytes)
             logger.info(f"Saved incoming frame to {debug_path} ({len(image_bytes)} bytes)")
 
-            # 1. VLM Inference
-            text = await describe_frame(image_bytes, game_hint)
+            # 1. VLM Inference (pass personality and recent commentary history)
+            text = await describe_frame(image_bytes, game_hint, self.personality, list(self.commentary_history))
             if not text:
                 return
+                
+            # Add to history to prevent word/phrase repetition in upcoming frames
+            self.commentary_history.append(text)
+            if len(self.commentary_history) > 3:
+                self.commentary_history.pop(0)
                 
             # 2. TTS Synthesis
             wav_path = await self.tts_provider.synthesize(text)
@@ -290,6 +298,24 @@ class WatchCog(commands.Cog):
             self.voice_client = None
 
         await ctx.send("🛑 I have stopped watching.")
+
+    @commands.command(name='personality')
+    async def personality_cmd(self, ctx, name: str = None):
+        """Changes or displays the active watch personality."""
+        available = ["announcer", "savage", "grandma", "analyst", "coach"]
+        
+        if not name:
+            await ctx.send(f"🎭 **Current Personality**: `{self.personality}`\nAvailable options: " + ", ".join([f"`{a}`" for a in available]) + "\nUsage: `!personality <name>`")
+            return
+            
+        name = name.lower()
+        if name not in available:
+            await ctx.send(f"❌ Unknown personality. Choose from: " + ", ".join([f"`{a}`" for a in available]))
+            return
+            
+        self.personality = name
+        self.commentary_history.clear() # Clear history on change to get a fresh start
+        await ctx.send(f"🎭 Changed watch personality to: **{name}**")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
