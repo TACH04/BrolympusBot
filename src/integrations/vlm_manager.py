@@ -30,8 +30,6 @@ async def describe_frame(image_bytes: bytes, game_hint: str = "") -> str:
     # If game_hint is provided, inject it
     if game_hint:
         system_prompt += f"\n\nContext: The game being played is {game_hint}."
-        
-    system_prompt += f"\n\nConstraint: Use exactly {image_tokens} image tokens if your model supports it."
 
     client = ollama.AsyncClient()
     
@@ -40,12 +38,8 @@ async def describe_frame(image_bytes: bytes, game_hint: str = "") -> str:
     
     messages = [
         {
-            'role': 'system',
-            'content': system_prompt
-        },
-        {
             'role': 'user',
-            'content': 'What is happening right now?!',
+            'content': f"{system_prompt}\n\nWhat is happening in this screenshot right now?!",
             'images': [b64_image]
         }
     ]
@@ -56,7 +50,7 @@ async def describe_frame(image_bytes: bytes, game_hint: str = "") -> str:
             model=model,
             messages=messages,
             options={
-                "num_predict": 30, # Cap max tokens generated to force it to be short
+                "num_predict": 150, # Sufficient headroom if model has thinking phase
                 "temperature": 0.8,
             }
         )
