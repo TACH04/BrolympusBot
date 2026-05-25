@@ -1,0 +1,11 @@
+# mediamtx configuration for BrolympusBot !watch
+
+logLevel: info
+logDestinations: [stdout]
+
+paths:
+  live:
+    runOnInit: ""
+    runOnDemand: ""
+    runOnReady: ""
+    runOnRead: ""

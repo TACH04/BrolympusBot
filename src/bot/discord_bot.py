@@ -18,6 +18,7 @@ from bot.text_chunking import DISCORD_MAX_MESSAGE_LENGTH, split_text
 from bot.reminder_manager import reminder_manager
 from integrations.google_calendar import get_upcoming_events_data
 from bot.brolympus_schedule_renderer import render_event_dashboard
+from bot.watch_cog import WatchCog
 
 def load_contacts():
     contacts_file = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'contacts.json')
@@ -409,6 +410,8 @@ async def on_ready():
     if not session_manager.http_session:
         session_manager.http_session = aiohttp.ClientSession()
         logger.info("Initialized shared HTTP session on bot ready.")
+        
+    await bot.add_cog(WatchCog(bot))
     
     # Start background cleanup of old sessions
     asyncio.create_task(session_manager._cleanup_old_sessions())
@@ -744,6 +747,8 @@ async def help_cmd(ctx):
 `!rebase <new prompt>` - Reset conversation context and completely replace my system prompt.
 `!stop` - Interrupt the current active task.
 `!session` - Display current session details (model, message count, idle time).
+`!watch [game]` - Join your voice channel and provide live commentary on your stream.
+`!unwatch` - Stop live commentary and leave the voice channel.
 `!help` - Display this message.
 
 Just mention me or talk directly to me to check and modify the squad's Google Calendar!"""

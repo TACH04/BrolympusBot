@@ -3,9 +3,13 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 python-dotenv
-discord.py
+discord.py[voice]
 flask
 flask-cors
 requests
 aiohttp
 Pillow
+opencv-python-headless
+piper-tts
+kokoro-onnx
+soundfile
