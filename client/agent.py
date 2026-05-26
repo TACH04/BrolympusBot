@@ -5,6 +5,7 @@ import json
 import uuid
 import threading
 import io
+import urllib.parse
 import requests
 import mss
 import pystray
@@ -13,6 +14,24 @@ from PIL import Image, ImageDraw
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 from plyer import notification
+
+if sys.platform == "win32":
+    import ctypes
+
+def get_active_window_title() -> str:
+    """Retrieves the title of the foreground active window on Windows, failing gracefully on other platforms."""
+    try:
+        if sys.platform == "win32":
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if hwnd:
+                length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+                    return buf.value
+    except Exception as e:
+        print(f"Error getting active window: {e}")
+    return ""
 
 CONFIG_FILE = "config.json"
 DEFAULT_SERVER_URL = "http://127.0.0.1:5002"
@@ -141,8 +160,14 @@ class Agent:
             img.save(buf, format="JPEG", quality=75)
             jpeg_bytes = buf.getvalue()
             
+            # Retrieve active window title
+            active_window = get_active_window_title()
+            
             # Upload
             url = f"{self.config['server_url']}/agent/frame?device_id={self.config['device_id']}"
+            if active_window:
+                url += f"&active_window={urllib.parse.quote(active_window)}"
+                
             resp = requests.post(
                 url,
                 data=jpeg_bytes,

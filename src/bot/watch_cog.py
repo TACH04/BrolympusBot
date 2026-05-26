@@ -142,7 +142,8 @@ class WatchCog(commands.Cog):
             self.busy_event.set()
             
             # Fire and forget processing task
-            asyncio.create_task(self._process_frame(image_bytes, self.game_hint, self.voice_client))
+            active_window = request.query.get("active_window", "")
+            asyncio.create_task(self._process_frame(image_bytes, self.game_hint, self.voice_client, active_window=active_window))
             
             return web.json_response({"status": "processing"})
             
@@ -153,7 +154,7 @@ class WatchCog(commands.Cog):
 
     # --- Processing Pipeline ---
 
-    async def _process_frame(self, image_bytes: bytes, game_hint: str, vc: discord.VoiceClient):
+    async def _process_frame(self, image_bytes: bytes, game_hint: str, vc: discord.VoiceClient, active_window: str = ""):
         """Processes the frame, generates commentary, and speaks it. Safely isolated."""
         wav_path = None
         try:
@@ -165,8 +166,8 @@ class WatchCog(commands.Cog):
                 f.write(image_bytes)
             logger.info(f"Saved incoming frame to {debug_path} ({len(image_bytes)} bytes)")
 
-            # 1. VLM Inference (pass personality and recent commentary history)
-            text = await describe_frame(image_bytes, game_hint, self.personality, list(self.commentary_history))
+            # 1. VLM Inference (pass personality, recent commentary history, and active window)
+            text = await describe_frame(image_bytes, game_hint, self.personality, list(self.commentary_history), active_window=active_window)
             if not text:
                 return
                 
