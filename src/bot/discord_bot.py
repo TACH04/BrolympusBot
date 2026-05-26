@@ -982,6 +982,27 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
                         if match:
                             created_event_links.append(match.group(1))
                             logger.info(f"Captured calendar link for embed: {match.group(1)}")
+                            
+                    if event['tool'] == 'generate_image':
+                        result_data = event['result']
+                        if isinstance(result_data, dict) and result_data.get("status") == "success":
+                            img_path = result_data.get("image_path")
+                            if img_path and os.path.exists(img_path):
+                                try:
+                                    with open(img_path, 'rb') as f:
+                                        discord_file = discord.File(f, filename='generated.png')
+                                        await message.reply(file=discord_file)
+                                    logger.info(f"Successfully uploaded generated image to Discord.")
+                                except Exception as e:
+                                    logger.error(f"Failed to upload image file to Discord: {e}")
+                                    await message.reply("*(Failed to upload the generated image.)*")
+                                finally:
+                                    try:
+                                        os.remove(img_path)
+                                        logger.info(f"Deleted temporary image file: {img_path}")
+                                    except Exception as e:
+                                        logger.error(f"Error removing temporary image file: {e}")
+                                        
                     pass # Silent on result, wait for the agent to talk
                 elif event['type'] == 'message':
                     logger.info(f"Agent generated response (Tokens: {event.get('tokens', 'N/A')}): '{event.get('content', '')}'")

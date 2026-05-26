@@ -20,12 +20,23 @@ def start_web():
 
 def start_bot():
     from bot.discord_bot import bot
+    from integrations.stable_diffusion import start_stable_diffusion_server, stop_stable_diffusion_server
+    
     DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
     if not DISCORD_TOKEN:
         print("Error: DISCORD_TOKEN not found in environment variables.")
         sys.exit(1)
-    print("Starting Discord bot...")
-    bot.run(DISCORD_TOKEN)
+        
+    # Start Stable Diffusion server if configured
+    sd_process = start_stable_diffusion_server()
+    
+    try:
+        print("Starting Discord bot...")
+        bot.run(DISCORD_TOKEN)
+    finally:
+        # Guarantee server shutdown even if bot crashes or is interrupted
+        if sd_process:
+            stop_stable_diffusion_server(sd_process)
 
 def main():
     parser = argparse.ArgumentParser(description="CalGuy Application Entry Point")

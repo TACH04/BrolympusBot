@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from integrations.google_calendar import list_upcoming_events, create_event, delete_event, verify_date
 from integrations.web_search import search_web, scrape_url
+from integrations.stable_diffusion import generate_local_image
 from agents.research_agent import ResearchAgent
 from dotenv import load_dotenv
 from core.tool_registry import ToolRegistry
@@ -258,6 +259,22 @@ if ENABLE_WEB_SCRAPING:
     def scrape_url_tool(url, debug_callback=None):
         return scrape_url(url, debug_callback=debug_callback)
 
+@registry.register(
+    name="generate_image",
+    description="Generate a new photorealistic image from a text description using epiCRealism. Use this when the user explicitly requests to draw, paint, generate, or create an image.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "A detailed, descriptive prompt for the image. Describe the subject, background, lighting, and composition. Since we are using epiCRealism, specify realistic/photographic elements."
+            }
+        },
+        "required": ["prompt"]
+    }
+)
+def generate_image_tool(prompt):
+    return generate_local_image(prompt)
 
 # --- Compatibility Layer ---
 
