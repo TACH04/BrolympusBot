@@ -12,6 +12,7 @@ import urllib.request
 import urllib.error
 from typing import Optional
 from dotenv import load_dotenv
+from integrations import jetson_memory
 
 load_dotenv()
 
@@ -118,6 +119,10 @@ def start_stable_diffusion_server() -> Optional[subprocess.Popen]:
         logger.error(f"STABLE_DIFFUSION_WORKING_DIR directory does not exist: {cwd}")
         return None
         
+    # Free memory and stop Ollama on Jetson before starting SD
+    jetson_memory.stop_ollama()
+    jetson_memory.compact_memory()
+        
     logger.info(f"Starting Stable Diffusion server with command: {cmd}")
     if cwd:
         logger.info(f"Working directory: {cwd}")
@@ -179,6 +184,8 @@ def start_stable_diffusion_server() -> Optional[subprocess.Popen]:
     
     if ready:
         logger.info("Stable Diffusion server is ready for image generation!")
+        # Once SD is loaded and ready, restart Ollama
+        jetson_memory.start_ollama()
     else:
         logger.warning("Stable Diffusion server did not become ready within the timeout period. Image generation may fail until it is fully loaded.")
         
