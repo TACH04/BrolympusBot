@@ -136,4 +136,5 @@ def setup_logging(mode: str = "bot"):
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
     logging.getLogger('discord').setLevel(logging.INFO)
     logging.getLogger('asyncio').setLevel(logging.WARNING)
+    logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 

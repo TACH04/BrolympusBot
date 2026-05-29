@@ -48,7 +48,7 @@ def get_calendar_service():
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
 
-    return build('calendar', 'v3', credentials=creds, static_discovery=False)
+    return build('calendar', 'v3', credentials=creds, static_discovery=False, cache_discovery=False)
 
 def get_upcoming_events_data(max_results=20, time_min=None):
     """
