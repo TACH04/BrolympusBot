@@ -21,7 +21,7 @@ def start_bot(start_sd: bool = True):
     sd_process = start_stable_diffusion_server(start_sd=start_sd)
     
     try:
-        print("Starting Discord bot...")
+        logging.getLogger("bot.discord_bot").info("Starting Discord bot...")
         bot.run(DISCORD_TOKEN, log_handler=None)
     finally:
         # Guarantee server shutdown even if bot crashes or is interrupted
