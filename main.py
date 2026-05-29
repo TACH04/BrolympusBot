@@ -6,11 +6,10 @@ import logging
 # Add src to python path if not already there
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+from core.logging_config import setup_logging
+
+def setup_logging_entry(mode):
+    setup_logging(mode)
 
 def start_web():
     from web.app import app
@@ -43,7 +42,7 @@ def main():
     parser.add_argument("mode", choices=["web", "bot"], help="Which part of the application to start")
     
     args = parser.parse_args()
-    setup_logging()
+    setup_logging_entry(args.mode)
     
     if args.mode == "web":
         start_web()

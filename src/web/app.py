@@ -11,25 +11,6 @@ import base64
 app = Flask(__name__)
 CORS(app)
 
-# Configure logging
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_file = 'web_app.log'
-
-# Set up Rotating File Handler (5 MB max size, 5 backup files)
-file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=5)
-file_handler.setFormatter(log_formatter)
-file_handler.setLevel(logging.INFO)
-
-# Set up Console Handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_formatter)
-console_handler.setLevel(logging.INFO)
-
-# Get the root logger and add handlers
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
 
 logger = logging.getLogger('web.app')
 
