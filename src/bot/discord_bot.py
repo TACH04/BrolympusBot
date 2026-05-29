@@ -1047,4 +1047,4 @@ async def process_and_reply(message, content, is_mentioned, images: list = None)
 
 if __name__ == '__main__':
     logger.info("Starting Discord bot...")
-    bot.run(DISCORD_TOKEN)
+    bot.run(DISCORD_TOKEN, log_handler=None)

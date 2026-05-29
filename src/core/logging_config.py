@@ -18,6 +18,7 @@ RESET = "\033[0m"
 # Map logger prefixes to component tags and colors
 COMPONENT_TAGS = {
     "bot.discord_bot": ("[DISCORD]", MAGENTA),
+    "discord": ("[DISCORD]", MAGENTA),
     "integrations.stable_diffusion": ("[STABLE_DIFF]", CYAN),
     "integrations.google_calendar": ("[GOOGLE_CAL]", GREEN),
     "integrations.web_search": ("[WEB_SEARCH]", BLUE),
