@@ -8,16 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from core.logging_config import setup_logging
 
-def setup_logging_entry(mode):
-    setup_logging(mode)
-
-def start_web():
-    from web.app import app
-    PORT = int(os.getenv("PORT", 5001))
-    print(f"Starting CalGuy Web UI on http://localhost:{PORT}")
-    app.run(host='0.0.0.0', port=PORT, debug=False)
-
-def start_bot():
+def start_bot(start_sd: bool = True):
     from bot.discord_bot import bot
     from integrations.stable_diffusion import start_stable_diffusion_server, stop_stable_diffusion_server
     
@@ -27,11 +18,11 @@ def start_bot():
         sys.exit(1)
         
     # Start Stable Diffusion server if configured
-    sd_process = start_stable_diffusion_server()
+    sd_process = start_stable_diffusion_server(start_sd=start_sd)
     
     try:
         print("Starting Discord bot...")
-        bot.run(DISCORD_TOKEN, log_handler=None)
+        bot.run(DISCORD_TOKEN)
     finally:
         # Guarantee server shutdown even if bot crashes or is interrupted
         if sd_process:
@@ -39,15 +30,12 @@ def start_bot():
 
 def main():
     parser = argparse.ArgumentParser(description="CalGuy Application Entry Point")
-    parser.add_argument("mode", choices=["web", "bot"], help="Which part of the application to start")
+    parser.add_argument("--no-image", action="store_true", help="Do not start the Stable Diffusion image generation server")
     
     args = parser.parse_args()
-    setup_logging_entry(args.mode)
+    setup_logging()
     
-    if args.mode == "web":
-        start_web()
-    elif args.mode == "bot":
-        start_bot()
+    start_bot(start_sd=not args.no_image)
 
 if __name__ == "__main__":
     main()

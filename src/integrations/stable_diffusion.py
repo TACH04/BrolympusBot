@@ -97,13 +97,17 @@ async def generate_local_image(prompt: str) -> dict:
             "message": f"An unexpected error occurred: {str(e)}"
         }
 
-def start_stable_diffusion_server() -> Optional[subprocess.Popen]:
+def start_stable_diffusion_server(start_sd: bool = True) -> Optional[subprocess.Popen]:
     """
     Starts the local Stable Diffusion WebUI server as a subprocess
     if START_STABLE_DIFFUSION_SERVER is enabled in the environment.
     Polls the server API until it becomes responsive.
     Returns the subprocess.Popen object if started, else None.
     """
+    if not start_sd:
+        logger.info("Stable Diffusion server startup skipped by command-line argument.")
+        return None
+
     start_server = os.getenv("START_STABLE_DIFFUSION_SERVER", "false").lower() == "true"
     if not start_server:
         logger.info("START_STABLE_DIFFUSION_SERVER is false. Skipping server startup.")

@@ -105,7 +105,7 @@ class BeautifulConsoleFormatter(logging.Formatter):
         return f"{timestamp} | {level_str} | {comp_str} | {msg}"
 
 
-def setup_logging(mode: str):
+def setup_logging(mode: str = "bot"):
     """
     Sets up the central logging configuration.
     mode: 'bot' or 'web'
