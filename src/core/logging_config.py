@@ -134,6 +134,6 @@ def setup_logging(mode: str = "bot"):
 
     # Mute noisy loggers
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
-    logging.getLogger('discord').setLevel(logging.WARNING)
+    logging.getLogger('discord').setLevel(logging.INFO)
     logging.getLogger('asyncio').setLevel(logging.WARNING)
 

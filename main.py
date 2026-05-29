@@ -22,7 +22,7 @@ def start_bot(start_sd: bool = True):
     
     try:
         print("Starting Discord bot...")
-        bot.run(DISCORD_TOKEN)
+        bot.run(DISCORD_TOKEN, log_handler=None)
     finally:
         # Guarantee server shutdown even if bot crashes or is interrupted
         if sd_process:
