@@ -107,11 +107,8 @@ def delete_event(event_id):
     Deletes an event based on its event ID.
     """
     service = get_calendar_service()
-    try:
-        service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
-        return f"Successfully deleted event {event_id} from {CALENDAR_ID}."
-    except Exception as e:
-        return f"Error deleting event: {str(e)}"
+    service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+    return f"Successfully deleted event {event_id} from {CALENDAR_ID}."
 
 def verify_date(date_string):
     """
@@ -119,17 +116,14 @@ def verify_date(date_string):
     Helps prevent hallucinating dates.
     Format expectations for time: '2026-04-03T10:00:00' or '2026-04-03'.
     """
-    try:
-        # Give a simpler fallback if they just provide a date
-        if 'T' not in date_string:
-            dt = datetime.datetime.strptime(date_string, '%Y-%m-%d')
-        else:
-            # Handle some basic iso formats
-            clean_date = date_string.replace('Z', '+00:00')
-            dt = datetime.datetime.fromisoformat(clean_date)
-        return f"The date {date_string} falls on a {dt.strftime('%A')}."
-    except Exception as e:
-        return f"Error parsing date {date_string}: {str(e)}. Please ensure format is YYYY-MM-DD or ISO 8601."
+    # Give a simpler fallback if they just provide a date
+    if 'T' not in date_string:
+        dt = datetime.datetime.strptime(date_string, '%Y-%m-%d')
+    else:
+        # Handle some basic iso formats
+        clean_date = date_string.replace('Z', '+00:00')
+        dt = datetime.datetime.fromisoformat(clean_date)
+    return f"The date {date_string} falls on a {dt.strftime('%A')}."
 
 if __name__ == '__main__':
     # Try fetching the calendar service to trigger authentication if needed

@@ -49,10 +49,25 @@ class ToolRegistry:
             sig = inspect.signature(func)
             
             if 'debug_callback' in sig.parameters:
-                return func(**arguments, debug_callback=debug_callback)
+                result = func(**arguments, debug_callback=debug_callback)
             else:
                 # We assume the arguments passed by the LLM match the function signature
-                return func(**arguments)
+                result = func(**arguments)
+
+            # Check if the returned string or dict indicates an error
+            is_error = False
+            if isinstance(result, str) and (result.startswith("Error") or "error" in result.lower()[:10]):
+                is_error = True
+            elif isinstance(result, dict) and result.get("status") == "error":
+                is_error = True
+                
+            if is_error:
+                err_msg = result.get("message") if isinstance(result, dict) else result
+                logger.error(f"Tool '{name}' returned an error: {err_msg}")
+            else:
+                logger.info(f"Tool '{name}' completed successfully.")
+                
+            return result
                 
         except TypeError as e:
             # Handle cases where LLM passes extra or missing arguments
@@ -61,7 +76,14 @@ class ToolRegistry:
             return error_msg
         except Exception as e:
             error_msg = f"Error executing tool '{name}' ({type(e).__name__}): {str(e)}"
-            logger.exception(error_msg)
+            
+            # Smart Exception Logging: Suppress traceback for standard API/input errors
+            expected_exceptions = ('HttpError', 'ValueError', 'TypeError', 'FileNotFoundError', 'RequestException')
+            if type(e).__name__ in expected_exceptions:
+                logger.error(error_msg)
+            else:
+                logger.exception(error_msg)
+                
             return error_msg
 
     def get_ollama_tools(self):

@@ -17,22 +17,22 @@ RESET = "\033[0m"
 
 # Map logger prefixes to component tags and colors
 COMPONENT_TAGS = {
-    "bot.discord_bot": ("[DISCORD]", MAGENTA),
-    "discord": ("[DISCORD]", MAGENTA),
-    "integrations.stable_diffusion": ("[STABLE_DIFF]", CYAN),
-    "integrations.google_calendar": ("[GOOGLE_CAL]", GREEN),
-    "integrations.web_search": ("[WEB_SEARCH]", BLUE),
-    "integrations.jetson_memory": ("[JETSON_MEM]", YELLOW),
-    "agents.main_harness": ("[HARNESS]", MAGENTA),
-    "agents.research_agent": ("[RESEARCHER]", BLUE),
-    "web.app": ("[WEB_APP]", YELLOW),
-    "httpx": ("[HTTPX]", BLUE),
-    "werkzeug": ("[WERKZEUG]", GREY),
-    "tools": ("[TOOLS]", GREEN),
+    "bot.discord_bot": ("[DISCORD]", GREY),
+    "discord": ("[DISCORD]", GREY),
+    "integrations.stable_diffusion": ("[IMAGE]", GREY),
+    "integrations.google_calendar": ("[GCAL]", GREY),
+    "integrations.web_search": ("[SEARCH]", GREY),
+    "integrations.jetson_memory": ("[JETSON]", GREY),
+    "agents.main_harness": ("[HARNESS]", GREY),
+    "agents.research_agent": ("[AGENT]", GREY),
+    "web.app": ("[WEB]", GREY),
+    "httpx": ("[HTTPX]", GREY),
+    "werkzeug": ("[SERVER]", GREY),
+    "tools": ("[TOOLS]", GREY),
 }
 
 DEFAULT_TAG = ("[SYSTEM]", GREY)
-TAG_WIDTH = 13
+TAG_WIDTH = 9
 
 class BeautifulConsoleFormatter(logging.Formatter):
     def format(self, record):
@@ -47,15 +47,15 @@ class BeautifulConsoleFormatter(logging.Formatter):
              level_name = "SUCCESS"
              
         if level_name == "INFO":
-            level_str = f"{CYAN}[INFO   ]{RESET}"
+            level_str = f"{BOLD}{CYAN}ℹ{RESET}"
         elif level_name == "SUCCESS":
-             level_str = f"{GREEN}[SUCCESS]{RESET}"
+             level_str = f"{BOLD}{GREEN}✔{RESET}"
         elif level_name in ("WARNING", "WARN"):
-            level_str = f"{YELLOW}[WARN   ]{RESET}"
+            level_str = f"{BOLD}{YELLOW}⚠{RESET}"
         elif level_name in ("ERROR", "CRITICAL"):
-            level_str = f"{BOLD}{RED}[ERROR  ]{RESET}"
+            level_str = f"{BOLD}{RED}✖{RESET}"
         else:
-             level_str = f"{GREY}[{level_name[:7]:<7}]{RESET}"
+             level_str = f"{GREY}•{RESET}"
 
         # 3. Component Tag
         tag_text, tag_color = DEFAULT_TAG
@@ -67,7 +67,7 @@ class BeautifulConsoleFormatter(logging.Formatter):
         # Override HTTP tag if it's an HTTP request
         msg = record.getMessage()
         if "HTTP Request" in msg or record.name == "httpx":
-             level_str = f"{BLUE}[HTTP   ]{RESET}"
+             level_str = f"{BOLD}{BLUE}⇄{RESET}"
 
         comp_str = f"{tag_color}{tag_text:<{TAG_WIDTH}}{RESET}"
 
@@ -94,15 +94,14 @@ class BeautifulConsoleFormatter(logging.Formatter):
 
         # 5. Dynamic Truncation
         term_width = shutil.get_terminal_size().columns
-        # Calculate plain text length of prefix (Timestamp | Level | Tag | )
-        # "HH:MM:SS | [XXXXXXX] | [XXXXXXXXXXXXX] | "
-        prefix_len = 8 + 3 + 9 + 3 + TAG_WIDTH + 3
+        # Calculate plain text length of prefix: Timestamp(8) + space(1) + icon(1) + space(1) + Tag(TAG_WIDTH) + space(1) + pipe(1) + space(1)
+        prefix_len = 8 + 1 + 1 + 1 + TAG_WIDTH + 3
         max_msg_len = term_width - prefix_len
         
         if max_msg_len > 10 and len(msg) > max_msg_len:
              msg = msg[:max_msg_len - 3] + "..."
 
-        return f"{timestamp} | {level_str} | {comp_str} | {msg}"
+        return f"{timestamp} {level_str} {comp_str} {GREY}│{RESET} {msg}"
 
 
 def setup_logging(mode: str = "bot"):
