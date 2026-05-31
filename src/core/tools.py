@@ -261,13 +261,13 @@ if ENABLE_WEB_SCRAPING:
 
 @registry.register(
     name="generate_image",
-    description="Generate a new photorealistic image from a text description using epiCRealism. Use this when the user explicitly requests to draw, paint, generate, or create an image.",
+    description="Generate an image from a text description. Use this when the user explicitly requests to draw, paint, generate, or create an image.",
     parameters={
         "type": "object",
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": "A detailed, descriptive prompt for the image. Describe the subject, background, lighting, and composition. Since we are using epiCRealism, specify realistic/photographic elements."
+                "description": "A comma-separated list of short keyword tags describing the image. Pass through the user's words directly. Do not embellish or add quality boosters."
             }
         },
         "required": ["prompt"]

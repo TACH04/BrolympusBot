@@ -33,7 +33,7 @@ async def generate_local_image(prompt: str) -> dict:
     
     # epiCRealism / SD 1.5 optimized defaults
     payload = {
-        "prompt": f"{prompt}, photorealistic, hyperrealistic, highly detailed, sharp focus, 8k resolution, raw photo",
+        "prompt": prompt,
         "negative_prompt": "ugly, deformed, bad eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, duplicate, cartoon, drawing, painting, 3d render, saturated",
         "steps": 25,
         "cfg_scale": 6.0,

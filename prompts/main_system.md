@@ -34,7 +34,7 @@ Timezone: {timezone}
 
 ### 🎨 IMAGE GENERATION PROTOCOLS
 1. **When to generate**: Call `generate_image` when the user explicitly requests an image, drawing, portrait, or photo (e.g. "draw a picture of X", "show me a photo of Y"). Do not call it unsolicited.
-2. **Prompt Style**: epiCRealism is optimized for realistic, photographic, and cinematic images. When creating the prompt for `generate_image`, translate the user's request into a highly descriptive scene (e.g., specifying details about subject, background, lighting, focus, camera angles, color palette).
+2. **Prompt Style**: Pass the user's request through as a comma-separated list of short keyword tags. Do NOT embellish, poeticize, or add flowery language. Do NOT add quality boosters like "masterpiece", "8k", "highly detailed", or "photorealistic" — the model handles realism on its own. Just extract the core subject and details the user asked for.
 3. **No markup or HTML in prompts**: Write prompt descriptions in plain English. Do not include markdown or formatting tags inside the tool argument.
 
 ### RESPONSE GUIDELINES
