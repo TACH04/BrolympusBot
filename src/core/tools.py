@@ -22,7 +22,48 @@ ENABLE_DEEP_RESEARCH = os.getenv("ENABLE_DEEP_RESEARCH", "false").lower() == "tr
 registry = ToolRegistry()
 
 
+# --- Compatibility Layer & Registry Globals ---
+_bot_instance = None
+_apply_personality_callback = None
+
+def register_bot(bot_instance, apply_callback=None):
+    global _bot_instance, _apply_personality_callback
+    _bot_instance = bot_instance
+    _apply_personality_callback = apply_callback
+
 # --- Tool Registrations ---
+
+@registry.register(
+    name="set_bot_personality",
+    description="Change your own personality and speech style dynamically. Use this when the user asks you to adopt a new persona or talk in a specific way.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "A fitting name for the character."},
+            "age": {"type": "string", "description": "An age or age range."},
+            "ethnicity": {"type": "string", "description": "Ethnicity or background description."},
+            "interests": {"type": "string", "description": "Key hobbies or interests."},
+            "dialect_description": {"type": "string", "description": "A clear description of how they talk."},
+            "dialect_strength": {"type": "string", "enum": ["subtle", "moderate", "pronounced", "extreme"], "description": "How strongly the dialect should be applied."},
+            "avatar_prompt": {"type": "string", "description": "A stable diffusion prompt for their profile picture. It must be strictly SFW, PG-rated, plain English, comma-separated keywords, no quality buzzwords. E.g., 'portrait of a young female pirate, red hair, bandana, smiling'."}
+        },
+        "required": ["name", "age", "ethnicity", "interests", "dialect_description", "dialect_strength", "avatar_prompt"]
+    }
+)
+def set_bot_personality_tool(name, age, ethnicity, interests, dialect_description, dialect_strength, avatar_prompt):
+    p = {
+        "name": name,
+        "age": str(age),
+        "ethnicity": ethnicity,
+        "interests": interests,
+        "dialect_description": dialect_description,
+        "dialect_strength": dialect_strength,
+        "avatar_prompt": avatar_prompt
+    }
+    if _apply_personality_callback:
+        # Returning the coroutine allows the harness to await it
+        return _apply_personality_callback(p)
+    return "Error: Personality callback not registered."
 
 @registry.register(
     name="list_upcoming_events",

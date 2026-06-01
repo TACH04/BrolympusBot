@@ -1,5 +1,5 @@
 import asyncio
-from agents.agent import GeneralAgent
+from agents.main_harness import GeneralAgent
 
 async def test_agent():
     agent = GeneralAgent()

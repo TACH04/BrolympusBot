@@ -18,6 +18,9 @@ from bot.text_chunking import DISCORD_MAX_MESSAGE_LENGTH, split_text
 from bot.reminder_manager import reminder_manager
 from integrations.google_calendar import get_upcoming_events_data
 from bot.brolympus_schedule_renderer import render_event_dashboard
+import ollama
+from integrations.stable_diffusion import generate_local_image
+from core.tools import register_bot
 
 def load_contacts():
     contacts_file = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'contacts.json')
@@ -288,6 +291,129 @@ class SessionManager:
             logger.info("Shared HTTP session closed.")
 
 session_manager = SessionManager()
+
+async def generate_personality_details(theme: str = None) -> dict:
+    prompt = (
+        f"Generate a unique personality. Theme hint: {theme or 'random'}. "
+        "Provide: \n"
+        "1. name: A fitting name for the character.\n"
+        "2. age: An age or age range.\n"
+        "3. ethnicity: Ethnicity or background description.\n"
+        "4. interests: Key hobbies or interests.\n"
+        "5. dialect_description: A clear description of how they talk (e.g., uses 90s skater slang, speaks in Shakespearean English).\n"
+        "6. dialect_strength: One of: 'subtle', 'moderate', 'pronounced', 'extreme'.\n"
+        "7. avatar_prompt: A stable diffusion prompt for their profile picture. It must be strictly SFW, PG-rated, plain English, comma-separated keywords, no quality buzzwords. E.g., 'portrait of a young female pirate, red hair, bandana, smiling'."
+    )
+    system = "You are a creative helper that designs interesting and fun characters/personas. Your output must be a single valid JSON object with keys: name, age, ethnicity, interests, dialect_description, dialect_strength, avatar_prompt. Do not include any markdown formatting, preamble, or explanation. Output ONLY the JSON."
+    
+    client = ollama.AsyncClient()
+    try:
+        response = await client.chat(
+            model=os.getenv("OLLAMA_MODEL", "qwen3-coder:30b"),
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt}
+            ],
+            format="json"
+        )
+        msg = response.get('message', {})
+        if hasattr(msg, 'model_dump'):
+            msg = msg.model_dump()
+        content = msg.get('content', '{}')
+        return json.loads(content)
+    except Exception as e:
+        logger.error(f"Error generating personality: {e}")
+        return {}
+
+async def apply_new_personality(p: dict):
+    if not p:
+        return "Failed to generate personality details."
+    
+    personality_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'current_personality.json')
+    try:
+        with open(personality_path, 'w', encoding='utf-8') as f:
+            json.dump(p, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save personality JSON: {e}")
+        return f"Failed to save personality: {e}"
+
+    # Hot swap system prompts for all active in-memory sessions
+    for session in session_manager.sessions.values():
+        agent = session.get('agent')
+        if agent and hasattr(agent, 'update_system_prompt'):
+            agent.update_system_prompt()
+
+    # Generate Image
+    img_result = await generate_local_image(p.get('avatar_prompt', ''), extra_negative_prompt="nsfw, naked, nude, suggestive, gore")
+    img_path = img_result.get("image_path")
+    
+    # Update Bot Avatar
+    avatar_status = ""
+    if img_path and os.path.exists(img_path):
+        try:
+            with open(img_path, 'rb') as f:
+                img_bytes = f.read()
+            await bot.user.edit(avatar=img_bytes)
+            avatar_status = "✅ Profile picture updated."
+        except discord.HTTPException as e:
+            logger.warning(f"Discord avatar rate limit or error: {e}")
+            avatar_status = "⚠️ Profile picture update skipped (Discord rate limit)."
+        except Exception as e:
+            logger.error(f"Failed to update avatar: {e}")
+            avatar_status = "⚠️ Failed to update profile picture."
+
+    # Announce to #calguy channels
+    embed = discord.Embed(
+        title=f"👤 New Personality: {p.get('name', 'Unknown')}", 
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="Age", value=p.get('age', 'Unknown'), inline=True)
+    embed.add_field(name="Background", value=p.get('ethnicity', 'Unknown'), inline=True)
+    embed.add_field(name="Interests", value=p.get('interests', 'Unknown'), inline=False)
+    embed.add_field(name="Speech Style", value=p.get('dialect_description', 'Unknown'), inline=False)
+    embed.add_field(name="Strength", value=p.get('dialect_strength', 'Unknown'), inline=True)
+    
+    calguy_ids = os.getenv("CALGUY_CHANNEL_IDS", "")
+    target_channels = []
+    
+    if calguy_ids:
+        for cid in calguy_ids.split(","):
+            try:
+                ch = bot.get_channel(int(cid.strip()))
+                if ch: target_channels.append(ch)
+            except Exception:
+                pass
+    else:
+        for guild in bot.guilds:
+            ch = discord.utils.get(guild.text_channels, name="calguy")
+            if not ch:
+                try:
+                    ch = await guild.create_text_channel("calguy", topic="Brolympus Bot personalities log")
+                except discord.Forbidden:
+                    pass
+            if ch:
+                target_channels.append(ch)
+
+    for ch in target_channels:
+        try:
+            if img_path and os.path.exists(img_path):
+                file_to_send = discord.File(img_path, filename="avatar.png")
+                embed.set_thumbnail(url="attachment://avatar.png")
+                await ch.send(file=file_to_send, embed=embed)
+            else:
+                await ch.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to post personality to {ch.name}: {e}")
+
+    if img_path and os.path.exists(img_path):
+        try:
+            os.remove(img_path)
+        except Exception:
+            pass
+
+    return f"Successfully adopted new personality: {p.get('name')}. {avatar_status}"
+
+register_bot(bot, apply_new_personality)
 
 # Supported image MIME types for vision
 IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
@@ -721,8 +847,8 @@ async def help_cmd(ctx):
     help_text = """**Brolympus Bot Commands:**
 `!sync_names` - Automatically populate data/contacts.json with server members.
 `!color <hex>` - Set your custom color for the schedule image (e.g. #FF5733).
+`!personality [theme]` - Generate a new personality for the bot (e.g. `!personality pirate`).
 `!clear` - Reset my conversation context immediately.
-`!rebase <new prompt>` - Reset conversation context and completely replace my system prompt.
 `!stop` - Interrupt the current active task.
 `!session` - Display current session details (model, message count, idle time).
 `!help` - Display this message.
@@ -755,20 +881,20 @@ async def clear_cmd(ctx):
         await session_manager.delete_session_file(ctx.channel.id)
         await ctx.send("✅ Conversation context for this channel has been cleared.")
 
-@bot.command(name='rebase')
-async def rebase_cmd(ctx, *, new_prompt: str = None):
-    """Reset the conversation context and replace the system prompt."""
-    if not new_prompt:
-        await ctx.send("❌ You must provide a new prompt. Usage: `!rebase <new prompt>`")
+@bot.command(name='personality')
+async def personality_cmd(ctx, *, theme: str = None):
+    """Generate a new personality for the bot."""
+    logger.info(f"User {ctx.author} ran !personality with theme: {theme}")
+    status_msg = await ctx.send("Generating new personality... this might take a moment.")
+    
+    p = await generate_personality_details(theme)
+    if not p:
+        await status_msg.edit(content="❌ Failed to generate personality details.")
         return
-
-    logger.info(f"User {ctx.author} ran !rebase command in channel {ctx.channel.id}.")
-    agent, lock = await session_manager.get_session(ctx.channel.id)
-    async with lock:
-        agent.rebase(new_prompt)
-        await session_manager.delete_session_file(ctx.channel.id)
-        await session_manager.save_session(ctx.channel.id)
-        await ctx.send("✅ Conversation reset and system instructions updated!")
+        
+    await status_msg.edit(content=f"Personality generated: **{p.get('name')}**. Applying profile picture and settings...")
+    result = await apply_new_personality(p)
+    await status_msg.edit(content=result)
 
 @bot.command(name='session')
 async def session_cmd(ctx):

@@ -21,7 +21,7 @@ logger = logging.getLogger('integrations.stable_diffusion')
 # Default API URL for local Stable Diffusion WebUI (AUTOMATIC1111)
 SD_API_URL = os.getenv("STABLE_DIFFUSION_API_URL", "http://localhost:7860")
 
-async def generate_local_image(prompt: str) -> dict:
+async def generate_local_image(prompt: str, extra_negative_prompt: str = "") -> dict:
     """
     Sends a request to the local Stable Diffusion WebUI API to generate an image
     using the epiCRealism model.
@@ -31,10 +31,14 @@ async def generate_local_image(prompt: str) -> dict:
     
     url = f"{SD_API_URL}/sdapi/v1/txt2img"
     
+    negative_prompt = "ugly, deformed, bad eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, duplicate, cartoon, drawing, painting, 3d render, saturated"
+    if extra_negative_prompt:
+        negative_prompt += f", {extra_negative_prompt}"
+
     # epiCRealism / SD 1.5 optimized defaults
     payload = {
         "prompt": prompt,
-        "negative_prompt": "ugly, deformed, bad eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, duplicate, cartoon, drawing, painting, 3d render, saturated",
+        "negative_prompt": negative_prompt,
         "steps": 25,
         "cfg_scale": 6.0,
         "width": 512,

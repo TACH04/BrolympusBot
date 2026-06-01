@@ -21,6 +21,32 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Los_Angeles")
 
 
+def get_current_personality_prompt():
+    personality_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'current_personality.json')
+    if os.path.exists(personality_path):
+        try:
+            import json
+            with open(personality_path, 'r', encoding='utf-8') as f:
+                p = json.load(f)
+        except Exception:
+            p = {}
+    else:
+        p = {}
+
+    if not p:
+        return ""
+
+    return f"""### 👤 CURRENT PERSONALITY & SPEECH STYLE
+You are operating under the following personality:
+- **Name**: {p.get('name', 'Brolympus Bot')}
+- **Age**: {p.get('age', 'unknown')}
+- **Ethnicity / Background**: {p.get('ethnicity', 'AI Assistant')}
+- **Interests**: {p.get('interests', 'Calendar management')}
+- **Speech Style / Dialect**: {p.get('dialect_description', 'Helpful and concise')}
+- **Dialect Pronouncedness**: {p.get('dialect_strength', 'moderate')}
+
+You MUST strictly adopt this speech style and dialect in all your responses. Tailor your tone, vocabulary, slang, and phrasing to match this persona at the specified level of pronouncedness. Always stay in character!"""
+
 def get_system_prompt():
     """Generates a dynamic system prompt with the current time and context."""
     now = datetime.datetime.now()
@@ -38,7 +64,10 @@ def get_system_prompt():
     if enable_deep_research:
         optional_tools += "\n   - `investigate_topic`: Use for complex questions requiring synthesis from multiple sources or a comprehensive report."
 
+    personality_section = get_current_personality_prompt()
+
     return template.format(
+        personality_section=personality_section,
         now=now.strftime('%A, %Y-%m-%d %H:%M:%S'),
         timezone=SERVER_TIMEZONE,
         optional_tools=optional_tools
@@ -60,10 +89,13 @@ class GeneralAgent:
         self.memory.reset({"role": "system", "content": prompt})
         self.last_activity_time = time.time()
 
-    def rebase(self, custom_prompt: str):
-        """Reset the agent's memory and override the system prompt."""
-        self.memory.reset({"role": "system", "content": custom_prompt})
-        self.last_activity_time = time.time()
+    def update_system_prompt(self):
+        """Regenerates and updates the system prompt at the beginning of the memory."""
+        fresh_prompt = get_system_prompt()
+        if self.memory.messages and self.memory.messages[0].get("role") == "system" and not self.memory.messages[0].get("is_memory"):
+            self.memory.messages[0]["content"] = fresh_prompt
+            self.memory.messages[0]["tokens"] = estimate_tokens(fresh_prompt)
+            logger.info("Updated system prompt in active session memory.")
 
     def load_history(self, messages: list[dict]):
         """

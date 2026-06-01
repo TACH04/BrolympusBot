@@ -1,7 +1,7 @@
 import asyncio
 import os
 import json
-from agents.agent import GeneralAgent
+from agents.main_harness import GeneralAgent
 from dotenv import load_dotenv
 
 async def reproduce():

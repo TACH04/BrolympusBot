@@ -22,7 +22,7 @@ async def simulate_user_message(channel_id, user_name, content, delay=0):
     message.reply = AsyncMock()
     
     # Fetch agent and lock
-    agent, lock = session_manager.get_session(channel_id)
+    agent, lock = await session_manager.get_session(channel_id)
     
     print(f"[Sim] Channel {channel_id} lock status: {'Locked' if lock.locked() else 'Free'}")
     
@@ -42,8 +42,8 @@ async def test_session_isolation():
     # Message in Channel 2
     await simulate_user_message(2, "Bob", "Hello from Channel 2")
     
-    agent1, _ = session_manager.get_session(1)
-    agent2, _ = session_manager.get_session(2)
+    agent1, _ = await session_manager.get_session(1)
+    agent2, _ = await session_manager.get_session(2)
     
     print(f"Channel 1 history length: {len(agent1.messages)}")
     print(f"Channel 2 history length: {len(agent2.messages)}")
