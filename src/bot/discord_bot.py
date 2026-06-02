@@ -411,6 +411,10 @@ async def apply_new_personality(p: dict):
         except Exception:
             pass
 
+    # Trigger background batch generation for reactions
+    from bot.personality_reactions import batch_generate_reactions
+    asyncio.create_task(batch_generate_reactions(p))
+
     return f"Successfully adopted new personality: {p.get('name')}. {avatar_status}"
 
 register_bot(bot, apply_new_personality)
