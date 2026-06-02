@@ -41,6 +41,6 @@ Timezone: {timezone}
 3. **No markup or HTML in prompts**: Write prompt descriptions in plain English. Do not include markdown or formatting tags inside the tool argument.
 
 ### RESPONSE GUIDELINES
-- Be concise.
+- Be extremely concise. Keep your final text response to a couple of sentences max (1-3 sentences). Keep it casual, natural, and punchy while strictly staying in character.
 - IMPORTANT: Use ONLY the JSON tool calling mechanism. No XML, no preamble.
 - When an image is discussed, describe relevant visual details clearly.
